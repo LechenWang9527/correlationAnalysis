@@ -1,0 +1,60 @@
+# Python environment and bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+scratch/.phase2-runtime/
+
+# Confidential industrial dataset (NEVER upload to Git)
+data/
+*.csv
+!reports/**/*.csv
+
+# Confidential report artifacts with production identifiers or record-level values
+/reports/stage1_shap_executive_brief.md
+/reports/step2b_strip_b_simpson_report.csv
+/reports/step2b_strip_b_summary.png
+/reports/step3_part2_shap_summary.png
+/reports/step3_phase2/X_A_proxy.csv
+/reports/step3_phase2/X_B_proxy.csv
+/reports/step3_phase2/clean_lineage_outcome_audit.csv
+/reports/step3_phase2/development_labels_audit.csv
+/reports/step3_phase2/development_oof.csv
+/reports/step3_phase2/development_sensitivity_oof.csv
+/reports/step3_phase2/historical_groups_audit.csv
+/reports/step3_phase2/inner_membership.csv
+/reports/step3_phase2/november_labels_audit.csv
+/reports/step3_phase2/november_predictions.csv
+/reports/step3_phase2/permutation_paired.csv
+/reports/step3_phase2/proxy_identity.csv
+/reports/step3_phase2/raw_lineage.csv
+/reports/step3_phase2/treeshap_A_oof.csv
+/reports/step3_phase2/treeshap_B_oof.csv
+
+# Large model binaries (>50MB violates Git performance)
+models/
+*.pkl
+
+# Training runtime logs and cache
+catboost_info/
+logs/
+*.log
+cli_test.json
+
+# Internal scratch workspace and temporary files
+scratch/
+archive_exploratory/
+.pytest_cache/
+.coverage
+
+# IDE and OS artifacts
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db

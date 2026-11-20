@@ -1,0 +1,22 @@
+{
+  "clean_rows": 53145,
+  "raw_rows": 53313,
+  "raw_multi_matches": 168,
+  "historical_groups": 19181,
+  "historical_label_conflicts": 8,
+  "historical_conflict_rows": 38,
+  "raw_quantity_sum_after_cleaning": 8211500,
+  "historical_quantity_once": 2817787,
+  "row_flags": {
+    "PASS": 53032,
+    "NEGATIVE_CLIPPED": 94,
+    "IDENTITY_RESIDUAL": 17,
+    "SOURCE_ZERO": 2
+  },
+  "anomaly_historical_groups": 98,
+  "proxy_orders": 19052,
+  "proxy_families": 18976,
+  "proxy_cross_boundary": 1,
+  "actual_vs_planned_month_rows": 8,
+  "proxy_label_conflicts": 136
+}

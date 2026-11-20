@@ -1,0 +1,15 @@
+{
+  "scored_utc": "2026-11-20T05:39:33.189787+00:00",
+  "freeze_sha256": "7f7d8cf2751cd2d8a782171e0c59fc0bf0a68591e5991d0a4afdbf0b8ec2910a",
+  "eligible_replay": 3567,
+  "eligible_family_overlap": 0,
+  "unseen_recipe": 350,
+  "unseen_center": 0,
+  "unseen_physical_category": 64,
+  "unseen_planned_month": true,
+  "artifacts_sha256": {
+    "november_labels_audit.csv": "8caa3945826158598e53af3090b96294e6e72bfe853e45b6849740069754897c",
+    "november_metrics.csv": "3da2409935017d3bb7089381a162a07e71269108a6d6ff53b1b3a4e0c349523e",
+    "november_predictions.csv": "85810666f6d72760f42243a97fdf930439e84bef8ccfbd7640baed77abf19b86"
+  }
+}

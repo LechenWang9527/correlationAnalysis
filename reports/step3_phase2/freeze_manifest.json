@@ -1,0 +1,262 @@
+{
+  "frozen_utc": "2026-11-20T05:39:10.117804+00:00",
+  "seed": 20261120,
+  "python": "3.13.9 (tags/v3.13.9:8183fa5, Oct 14 2025, 14:09:13) [MSC v.1944 64 bit (AMD64)]",
+  "packages": {
+    "numpy": "2.2.6",
+    "pandas": "2.2.3",
+    "scipy": "1.15.3",
+    "scikit-learn": "1.6.1",
+    "catboost": "1.2.8",
+    "matplotlib": "3.10.3"
+  },
+  "input_sha256": {
+    "data/processed/clean_dataset.csv": "59f0b129820a4535d7e5bea15e45a3b5ab5608982dec368402b0494156a92b0f",
+    "data/raw/output.csv": "eab24e2c4de56466943300799e1da20e5dbdb8bd93cb9d04e43972a51146bea6",
+    "data/processed/feature_schema.json": "1ac7931ac6dcb835fa92ecb61c0eddfc6947b4b1293cfc390b2a043c1ad27afd"
+  },
+  "code_sha256": {
+    "src/step3_no_leakage.py": "cf6921cabaeb621c1b728aaa67a872e306cbc5b941b6e04e55c847121472199d",
+    "src/step3_no_leakage_attribution.py": "c271c3abfeb4f7f2ee7a612f84fcd4d1318b985a4a0ef900506c403a4ae56e16",
+    "src/step3_no_leakage_data.py": "935f7d56865de24b8a4b076efa6be3c2bdedd0e905ec897a11bdc754dce062b4",
+    "src/step3_no_leakage_models.py": "c7820d5f7a7dba51ceb71c11677635aea177cbfb55f1c358b5650defa9f7d24e"
+  },
+  "plan_sha256": "81dd909168010d7ef3f0de455be8ed08e45d62cc6ae2296dfb56dd37f6cae4bf",
+  "development_artifacts_sha256": {
+    "ale_bins.csv": "0c98f54a9979c10e758db528cebc0a11466d216522f7faba14ac836c225ec441",
+    "development_labels_audit.csv": "1a31fe1f515af5ac75ada4c39ff87e1e1e5ba702956fe4a2602dcf88d4f65760",
+    "development_metrics.csv": "c46654efa393ca45cb56fea165c5d99d8d7a7059d977b87b73460d38fac234bf",
+    "development_oof.csv": "8362307d5d4ffe976264dbb20fe3e056a8022756fcbb4c008349c8a89b2b4a7e",
+    "frozen_models.pkl": "494810057aefccb2ecd9affb43a452daaf7e91d86b7b39fa40dbda903d44aa01",
+    "inner_membership.csv": "c64463d7bccf7e119839eaab2a7e99dc5ed541b8d29359600c720ac24f9c78ef",
+    "nested_fit_log.csv": "3449876c94f0289e6b1aff2d79a02b2e718b265d19252095c2586a30bb8488de",
+    "permutation_paired.csv": "a5893c4c0ccbc11fbed9d3c000f207bb027bdfc462e92f8def1d31be075e6726",
+    "permutation_repetitions.csv": "111ddb5401075908eaaabbc1bc96000c4c87d7f908ddb5a218dba6947ed1a5f3",
+    "permutation_support.csv": "4767bdb4895f802414636b4dc4dbf92ae1f2ad5cca7dfb39b26d9c2933845495",
+    "proxy_identity.csv": "7bad65f6566c408dd4c12ef48aae297c7c4b997ec9db5ecda55278e9ea864046",
+    "treeshap_A_oof.csv": "2b48010b8c7388141c16d63e3cce4e73836332b084ebe024953732432b5467be",
+    "treeshap_B_oof.csv": "61e589ee36d042e40fcd959cddd3056b9a14f9bfaf640a86e862354da45bf2db",
+    "X_A_proxy.csv": "27f1151e8de2937579443fc70c97783c518b62583871d0c2e7da0fdf1f33562f",
+    "X_B_proxy.csv": "1030a01cc43f4e347a2415fce8f1f4bd40a721c07d18a552f42b29ac83a4c28c"
+  },
+  "features": {
+    "A": [
+      "rim_diameter",
+      "tire_section_width",
+      "tire_aspect_ratio",
+      "bead_-_bead_inner_diameter",
+      "bead_-_bead_construction",
+      "1_liner_-_width",
+      "1_liner_-_thickness",
+      "1_liner_-_profile_geometry_code",
+      "1_liner_-_compound",
+      "1_apex_-_width",
+      "1_apex_-_thickness",
+      "1_apex_-_compound",
+      "1_apex_-_profile_geometry_code",
+      "1_carcass_ply_-_width",
+      "Has_2nd_Carcass_Ply",
+      "2_carcass_ply_-_width",
+      "2_carcass_ply_-_thickness",
+      "2_carcass_ply_-_cf_code",
+      "Has_Bead_Reinforcement",
+      "1_bead_reinforcement_-_width",
+      "ply_lock",
+      "1_flange_cushion_-_compound",
+      "1_sidewall_-_bom_component_setting",
+      "1_sidewall_profile_-_weight",
+      "1_sidewall_-_combined_profile_-_width",
+      "1_sidewall_profile_-_compound",
+      "1_sidewall_-_combined_profile_-_profile_geometry_code",
+      "1_belt_-_cf_epdm",
+      "1_belt_ply_assembly_-_1_strip_rubber_-_width",
+      "2_belt_-_angle",
+      "2_belt_-_width",
+      "1_belt_-_cf_code",
+      "1_belt_-_cf_construction",
+      "1_wound_cap_ply_-_cf_code",
+      "1_wound_cap_ply_-_cf_construction",
+      "1_wound_cap_ply_-_spooling_construction",
+      "1_tread_base_-_width",
+      "1_tread_wing_-_width",
+      "1_tread-belt_assembly_-_weight",
+      "1_tread_base_-_compound",
+      "1_tread_cap_-_compound",
+      "1_tread_wing_-_profile_geometry_code",
+      "PlannedQuantity",
+      "PlannedStartHour",
+      "PlannedStartDayOfWeek",
+      "PlannedStartMonth"
+    ],
+    "B": [
+      "rim_diameter",
+      "tire_section_width",
+      "tire_aspect_ratio",
+      "bead_-_bead_inner_diameter",
+      "bead_-_bead_construction",
+      "1_liner_-_width",
+      "1_liner_-_thickness",
+      "1_liner_-_profile_geometry_code",
+      "1_liner_-_compound",
+      "1_apex_-_width",
+      "1_apex_-_thickness",
+      "1_apex_-_compound",
+      "1_apex_-_profile_geometry_code",
+      "1_carcass_ply_-_width",
+      "Has_2nd_Carcass_Ply",
+      "2_carcass_ply_-_width",
+      "2_carcass_ply_-_thickness",
+      "2_carcass_ply_-_cf_code",
+      "Has_Bead_Reinforcement",
+      "1_bead_reinforcement_-_width",
+      "ply_lock",
+      "1_flange_cushion_-_compound",
+      "1_sidewall_-_bom_component_setting",
+      "1_sidewall_profile_-_weight",
+      "1_sidewall_-_combined_profile_-_width",
+      "1_sidewall_profile_-_compound",
+      "1_sidewall_-_combined_profile_-_profile_geometry_code",
+      "1_belt_-_cf_epdm",
+      "1_belt_ply_assembly_-_1_strip_rubber_-_width",
+      "2_belt_-_angle",
+      "2_belt_-_width",
+      "1_belt_-_cf_code",
+      "1_belt_-_cf_construction",
+      "1_wound_cap_ply_-_cf_code",
+      "1_wound_cap_ply_-_cf_construction",
+      "1_wound_cap_ply_-_spooling_construction",
+      "1_tread_base_-_width",
+      "1_tread_wing_-_width",
+      "1_tread-belt_assembly_-_weight",
+      "1_tread_base_-_compound",
+      "1_tread_cap_-_compound",
+      "1_tread_wing_-_profile_geometry_code"
+    ]
+  },
+  "nominal": [
+    "1_apex_-_compound",
+    "1_apex_-_profile_geometry_code",
+    "1_belt_-_cf_code",
+    "1_belt_-_cf_construction",
+    "1_flange_cushion_-_compound",
+    "1_liner_-_compound",
+    "1_liner_-_profile_geometry_code",
+    "1_sidewall_-_combined_profile_-_profile_geometry_code",
+    "1_sidewall_profile_-_compound",
+    "1_tread_base_-_compound",
+    "1_tread_cap_-_compound",
+    "1_tread_wing_-_profile_geometry_code",
+    "1_wound_cap_ply_-_cf_code",
+    "1_wound_cap_ply_-_cf_construction",
+    "1_wound_cap_ply_-_spooling_construction",
+    "2_carcass_ply_-_cf_code",
+    "Has_2nd_Carcass_Ply",
+    "Has_Bead_Reinforcement",
+    "PlannedStartDayOfWeek",
+    "PlannedStartMonth",
+    "bead_-_bead_construction",
+    "ply_lock"
+  ],
+  "physical_modules": {
+    "geometry_bead": [
+      "rim_diameter",
+      "tire_section_width",
+      "tire_aspect_ratio",
+      "bead_-_bead_inner_diameter",
+      "bead_-_bead_construction"
+    ],
+    "liner": [
+      "1_liner_-_width",
+      "1_liner_-_thickness",
+      "1_liner_-_profile_geometry_code",
+      "1_liner_-_compound"
+    ],
+    "carcass_reinforcement": [
+      "1_apex_-_width",
+      "1_apex_-_thickness",
+      "1_apex_-_compound",
+      "1_apex_-_profile_geometry_code",
+      "1_carcass_ply_-_width",
+      "Has_2nd_Carcass_Ply",
+      "2_carcass_ply_-_width",
+      "2_carcass_ply_-_thickness",
+      "2_carcass_ply_-_cf_code",
+      "Has_Bead_Reinforcement",
+      "1_bead_reinforcement_-_width",
+      "ply_lock"
+    ],
+    "sidewall": [
+      "1_flange_cushion_-_compound",
+      "1_sidewall_-_bom_component_setting",
+      "1_sidewall_profile_-_weight",
+      "1_sidewall_-_combined_profile_-_width",
+      "1_sidewall_profile_-_compound",
+      "1_sidewall_-_combined_profile_-_profile_geometry_code"
+    ],
+    "belt_cap": [
+      "1_belt_-_cf_epdm",
+      "1_belt_ply_assembly_-_1_strip_rubber_-_width",
+      "2_belt_-_angle",
+      "2_belt_-_width",
+      "1_belt_-_cf_code",
+      "1_belt_-_cf_construction",
+      "1_wound_cap_ply_-_cf_code",
+      "1_wound_cap_ply_-_cf_construction",
+      "1_wound_cap_ply_-_spooling_construction"
+    ],
+    "tread": [
+      "1_tread_base_-_width",
+      "1_tread_wing_-_width",
+      "1_tread-belt_assembly_-_weight",
+      "1_tread_base_-_compound",
+      "1_tread_cap_-_compound",
+      "1_tread_wing_-_profile_geometry_code"
+    ]
+  },
+  "catboost_options": [
+    {
+      "iterations": 145,
+      "depth": 5
+    },
+    {
+      "iterations": 245,
+      "depth": 6
+    }
+  ],
+  "ridge_options": [
+    {
+      "alpha": 1.0
+    },
+    {
+      "alpha": 15.0
+    },
+    {
+      "alpha": 100.0
+    }
+  ],
+  "outer_folds": 5,
+  "inner_folds": 3,
+  "thresholds": {
+    "identity_residual": 0.0001,
+    "shap_atol": 1e-06,
+    "shap_rtol": 1e-08,
+    "conditional_donor_work_orders": 20,
+    "conditional_min_coverage": 0.8,
+    "conditional_repetitions": 50,
+    "gower_radius": 0.14,
+    "bootstrap_repetitions": 1000,
+    "ale_features": {
+      "1_liner_-_width": "Liner width",
+      "1_liner_-_thickness": "Liner thickness",
+      "1_apex_-_width": "Apex width",
+      "1_carcass_ply_-_width": "Carcass ply width",
+      "1_sidewall_profile_-_weight": "Sidewall profile weight",
+      "2_belt_-_width": "Second belt width",
+      "1_tread-belt_assembly_-_weight": "Tread-belt assembly weight"
+    },
+    "ale_min_orders": 50,
+    "ale_min_recipe_proxies": 5
+  },
+  "n_development_eligible": 15348,
+  "n_all_proxy_ids": 19052
+}
