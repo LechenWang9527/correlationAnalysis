@@ -17,40 +17,24 @@ Industrial Tire Manufacturing Cycle-Time Deviation Modeling & Leak-Free Causal A
 
 本项目严格遵循工业级数据科学工程规范，经历了五个递进的研发阶段：
 
-```text
-原始数据 (output.csv: 53,313 行 x 94 列)
-    │
-    ▼
-[Step 1: 数据清洗与标准化 Schema 冻结]
-├── 投影 76 维标准化字段 (49 数值, 26 类别, 1 标签)，确立 feature_schema.json
-└── 输出 clean_dataset.csv (53,145 行 x 76 列)，记录清洗血缘与去重规则
-    │
-    ▼
-[Step 2: 统计筛选与辛普森悖论排查]
-├── 试纸 A: 单变量相关性、相关比 Eta 与互信息初筛 (reports/step2a_strip_a_report.csv)
-└── 试纸 B: 按机台/班次分层排查，捕获 44 个存在正负翻转的辛普森悖论特征 (step2b)
-    │
-    ▼
-[Step 3 Part 1: 多模型基座横评与投票集成]
-├── 建立时间顺序划分 (8-10 月开发折，11 月盲测)
-├── 评估 CatBoost、LightGBM、XGBoost、RandomForest、Ridge、MLP 六大模型
-└── 输出 5 折 CV R² = 82.61%，11 月盲测 R² = 78.52%
-    │
-    ▼
-[关键转折: 红队审计与 99.968% 算术恒等式泄露发现]
-├── 审计发现: 53,049 行数据中 99.968% 严格符合算术公式:
-│   Y = ActualVsIEGap = O / (C x Q) - (IE + TOL) / 100
-│   (其中 O=打卡秒数, C=覆盖率, Q=完成量, IE=标准工时, TOL=公差)
-└── 结构陷阱: 该 5 项定义项占模型方差解释度的 96.4%，物理参数被严重掩盖；
-    且 53,145 行记录仅对应约 19,052 个独立工单，行级推断存在严重伪重复。
-    │
-    ▼
-[Step 3 Part 2 (Phase 2): 无泄露工单级重构与五维因果归因]
-├── 样本净化: 将 5.3 万行操作工打卡记录干净聚合为 19,052 个独立代理工单
-├── 白名单机制: 彻底剥离 O, C, Q, IE, TOL 等事后项，确立纯物理 B 组 (42 列) 与事前 A 组 (46 列)
-├── 工单族隔离验证: 8-10 月 5 折嵌套 CV 与 11 月独立冻结回放
-└── 五维归因输出: TreeSHAP 排名、模块条件置换、模块级 LOCO 消融、带支撑区间的 1D-ALE
-```
+原始快照 output.csv 含 53,313 行、94 列。
+
+1. **Step 1 数据清洗与字段定义**
+   - 输出 53,145 行、76 列的 clean_dataset.csv，其中有 49 个数值特征、26 个类别特征和 1 个标签。
+   - 在 feature_schema.json 中记录字段结构与转换，按清洗规则去重。
+2. **Step 2 统计筛查与分层诊断**
+   - Step 2A 评估数值和类别特征与目标的单变量关联，输出 reports/step2a_strip_a_report.csv。
+   - Step 2B 比较多变量模型，并按机台和规格分层。44 个特征触发组内相关方向反转或总体弱相关与分层强相关警报。
+3. **Step 3 Part 1 历史模型基准与加权投票**
+   - 8–10 月按工单分组交叉验证，11 月用于历史留出评价。
+   - 比较 Ridge、ExtraTrees、CatBoost、LightGBM 和 XGBoost 五个基模型及加权投票方案。CatBoost 的开发期折外 R² 为 82.61%，11 月历史留出 R² 为 78.52%。
+4. **目标泄露审计**
+   - 53,049 行有效记录中有 99.968% 符合恒等式 Y = O / (C × Q) − (IE + TOL) / 100。其中 O 为打卡秒数，C 为覆盖率，Q 为完成量，IE 为标准工时，TOL 为公差。
+   - 历史分析中，这 5 个字段占模型解释方差的 96.4%。53,145 行原始打卡记录聚合为 19,052 个候选代理工单。
+5. **Step 3 Phase 2 工单级重构与预测归因**
+   - 排除恒等式字段，设置含 46 列的事前 A 组和含 42 列的纯物理 B 组。
+   - 8–10 月按代理工单族做 5 折嵌套交叉验证，冻结后执行 11 月回放。
+   - 输出 TreeSHAP 排名、模块条件置换、模块 LOCO 和带支撑区间的 1D-ALE。
 
 ---
 
@@ -115,7 +99,7 @@ python -m unittest discover -s src -p test_step3_no_leakage.py
 # 1. 运行工单级无泄露建模与 5 折交叉验证（结果输出至 reports/step3_phase2/）
 python src/step3_no_leakage.py develop
 
-# 2. 运行 11 月独立盲测集评分封存
+# 2. 运行 11 月冻结回放评分
 python src/step3_no_leakage.py score
 
 # 3. 运行一致性与敏感性审计诊断
@@ -125,7 +109,7 @@ python src/diagnostics_step3_phase2.py
 # 4. 重新渲染出版级图表与技术总报告
 python src/render_enhanced_figures.py
 
-# 5. 合成 5100x2640 px 综合全景看板
+# 5. 合成 5100x2640 px 四面板综合图
 python src/plot_no_leakage_dashboard.py
 ```
 
@@ -133,39 +117,22 @@ python src/plot_no_leakage_dashboard.py
 
 ## 5. 项目目录结构说明
 
-```text
-TireCycle-Attribution/
-|-- README.md                                 # 本项目主说明书（全流程与复现指南）
-|-- PROJECT_STRUCTURE.md                      # 详尽的 300 行模块导航与血缘索引文档
-|-- requirements.txt                          # 生产依赖版本锁定清单
-|-- .gitignore                                # Git 忽略规范（严格拦截数据与大模型）
-|
-|-- src/                                      # 生产源码目录
-|   |-- step1_data_cleaner.py                 # Step 1: 原始数据清洗与 76 维 Schema 定义
-|   |-- step2a_strip_a_screening.py           # Step 2A: 单变量相关性与互信息初筛
-|   |-- step2b_strip_b_team_and_simpson.py    # Step 2B: 班次/机台分层与辛普森悖论排查
-|   |-- step3_model_benchmark_and_voting.py   # Step 3 Part 1: 六大基座模型基准评测
-|   |-- step3_no_leakage.py                   # Step 3 Part 2: 无泄露工单级建模与评分入口
-|   |-- step3_no_leakage_data.py              # 工单聚合、白名单过滤与血缘守恒校验
-|   |-- step3_no_leakage_models.py            # CatBoost / Ridge 嵌套交叉验证与超参搜索
-|   |-- step3_no_leakage_attribution.py       # TreeSHAP / 模块置换 / 模块LOCO / ALE 引擎
-|   |-- render_enhanced_figures.py            # 出版级学术图表渲染引擎
-|   |-- plot_no_leakage_dashboard.py          # 2x2 全景大看板拼装合成模块
-|   `-- test_step3_no_leakage.py              # 自动化回归测试套件
-|
-|-- reports/                                  # 交付报告与图表
-|   |-- step3_no_leakage_attribution_report.md# Phase 2 工业技术总报告
-|   `-- step3_phase2/
-|       |-- figures/                          # 300 DPI 出版级图表目录
-|       |   |-- step3_no_leakage_synthesis_dashboard.png # 全景综合大看板
-|       |   |-- model_performance.png         # 子图 (a) 模型竞技场对比
-|       |   |-- treeshap_physical.png         # 子图 (b) 物理重要性 Top 20 榜单
-|       |   |-- module_attribution.png        # 子图 (c) 模块级消融与条件置换
-|       |   `-- ale_supported_ranges.png      # 子图 (d) 局部有效 ALE 响应曲线
-|       `-- *.csv                             # 32 份指标明细与特征重要性报表
-|
-`-- docs/                                     # 阶段技术方案与 50 篇顶会文献综述
-```
+- 根目录的 README.md 提供流程与复现命令，PROJECT_STRUCTURE.md 列出模块和产物，requirements.txt 声明运行依赖。
+- src/
+  - step1_data_cleaner.py 清洗原始数据并定义字段结构。
+  - step2a_strip_a_screening.py 执行单特征筛查。
+  - step2b_strip_b_team_and_simpson.py 执行多变量模型对比和分层诊断。
+  - step3_model_benchmark_and_voting.py 生成历史基准与投票结果。
+  - step3_no_leakage.py 是工单级建模与评分入口。
+  - step3_no_leakage_data.py 负责工单聚合、白名单筛选与血缘检查。
+  - step3_no_leakage_models.py 实现 CatBoost 和 Ridge 的嵌套交叉验证。
+  - step3_no_leakage_attribution.py 实现 TreeSHAP、模块置换、LOCO 和 ALE。
+  - render_enhanced_figures.py 生成评测与归因图，plot_no_leakage_dashboard.py 合成四面板综合图。
+  - test_step3_no_leakage.py 和 test_screening_contract.py 覆盖工单和筛查契约。
+- reports/
+  - step3_no_leakage_attribution_report.md 记录 Phase 2 结果和适用边界。
+  - step3_phase2/ 保存指标 CSV，figures/ 保存综合图、模型评测、TreeSHAP、模块归因及 ALE 支撑区间图。
+- docs/ 保存各阶段技术方案与文献综述。
 
 ---
 

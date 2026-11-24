@@ -276,11 +276,11 @@ def results_text(output, report, freeze, seal, audit, scores, shap, shap_a, shap
                       & loco['before'].eq('B_CatBoost'), 'delta_mae'].iloc[0]
     relative = Path(os.path.relpath(output, report.parent)).as_posix()
 
-    sections = [f'''# 无泄露工单级重构与真实物理归因报告
+    sections = [f'''# 无泄露工单级重构与物理特征预测归因报告
 
 ## 1. 结论与适用范围
 
-[PASS] 按审定白名单完成 CSV 快照级特征净化、代理工单聚合、开发期嵌套交叉验证、11 月冻结回放和四项预测归因。全量保留 **{audit['proxy_orders']:,}** 个候选组、**{len(oof):,}** 个开发期可评分代理单和 **{len(nov):,}** 个 11 月可评分代理单。标签为源表 `ActualVsIEGap`，误差单位为秒/胎。每个可评分代理单权重相同。
+[PASS] 按白名单筛选快照特征，并完成代理工单聚合、开发期嵌套交叉验证、11 月冻结回放和四项预测归因。全量保留 **{audit['proxy_orders']:,}** 个候选组、**{len(oof):,}** 个开发期可评分代理单和 **{len(nov):,}** 个 11 月可评分代理单。标签为源表 `ActualVsIEGap`，误差单位为秒/胎。每个可评分代理单权重相同。
 
 11 月回放中，A 组 CatBoost 的 MAE 比 B 组低 **{-a_vs_b:.3f}** 秒/胎。条件置换覆盖最高 **{permutation['coverage'].max():.1%}**，六个模块均只达到子群发布条件。内衬厚度的 ALE 在五折有支撑，响应方向和幅度随折变化。
 

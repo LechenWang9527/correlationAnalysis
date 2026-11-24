@@ -86,10 +86,10 @@ reports/step3_phase2/frozen_models.pkl        Phase 2 冻结模型（约 2 MB）
 
 | 脚本 | 阶段 | 职责 |
 | --- | --- | --- |
-| `step1_data_cleaner.py` | 第一步 | 物理提纯与无失真清洗：修正负值异常，剔除索引列、常数列、严格派生列与文本双胞胎列，按四批规则解码 24 个名义/代号列，输出 `clean_dataset.csv` 与 `feature_schema.json`。 |
-| `step2a_strip_a_screening.py` | 第二步 A | 单特征公平体检。数值轨使用 Pearson、Spearman、15 分箱非线性 R²、单因素 F 检验与抽样距离相关；文本轨使用 Eta²、无偏 Omega²、ANOVA、Kruskal-Wallis 与 0-1 离散距离相关；内置随机噪声哨兵。 |
-| `step2b_strip_b_team_and_simpson.py` | 第二步 B | 多特征团战探针。Dummy、Ridge、HistGBDT 三路 5 折对比；高基数文本走折内 TargetEncoder，低中基数走 OrdinalEncoder；19 次 Y-Scrambling 置换检验；影子噪声特征重要性对照；全表辛普森悖论分家排查。 |
-| `step3_model_benchmark_and_voting.py` | 第三步 Part 1 | 五基模型（Ridge、ExtraTrees、CatBoost、LightGBM、XGBoost）与三类加权投票（Equal、SLSQP、Caruana）；两套候选池、两套防泄露协议（工单分组 GroupKFold OOF 与 11 月跨月盲测）；产出 `models/step3_models_bundle.pkl`。 |
+| `step1_data_cleaner.py` | 第一步 | 数据清洗与类型转换：修正负值异常，剔除索引列、常数列、严格派生列与等价文本列，分批转换 34 个非数值或代号字段，输出 `clean_dataset.csv` 与 `feature_schema.json`。 |
+| `step2a_strip_a_screening.py` | 第二步 A | 双轨单特征筛查。数值轨使用 Pearson、Spearman、15 分箱非线性 R²、单因素 F 检验与抽样距离相关；文本轨使用 Eta²、无偏 Omega²、ANOVA、Kruskal-Wallis 与 0-1 离散距离相关；内置随机噪声对照。 |
+| `step2b_strip_b_team_and_simpson.py` | 第二步 B | 多变量模型对比。Dummy、Ridge、HistGBDT 三路 5 折对比；高基数文本走折内 TargetEncoder，低中基数走 OrdinalEncoder；19 次 Y-Scrambling 置换检验；随机噪声特征重要性对照；全表辛普森悖论分层诊断。 |
+| `step3_model_benchmark_and_voting.py` | 第三步 Part 1 | 五基模型（Ridge、ExtraTrees、CatBoost、LightGBM、XGBoost）与三类加权投票（Equal、SLSQP、Caruana）；两套候选池、开发期工单分组 GroupKFold 折外评价和 11 月历史留出评价；产出 `models/step3_models_bundle.pkl`。 |
 | `step3_part2_feature_attribution.py` | 第三步 Part 2 | 六阶段归因：TreeSHAP 与物理簇 Group Shapley、跨月置换重要性、Top-10 分组 SAGE、定向 LOCO 重训、Top-6 连续参数 ALE、5 折工单隔离部分线性 DML 与安慰剂反驳。 |
 
 ### 3.2 Phase 2 无泄露重构链路
@@ -194,17 +194,17 @@ logs/step3_part2.log                                   归因运行日志
 ### 5.4 第二步筛选报表
 
 ```text
-reports/step2a_strip_a_report.csv        单特征体检明细
-reports/step2a_strip_a_summary.png       单特征体检图
-reports/step2b_strip_b_simpson_report.csv 团战与辛普森排查明细
-reports/step2b_strip_b_summary.png        团战与辛普森排查图
+reports/step2a_strip_a_report.csv        单特征筛查明细
+reports/step2a_strip_a_summary.png       单特征筛查图
+reports/step2b_strip_b_simpson_report.csv 模型对比与分层诊断明细
+reports/step2b_strip_b_summary.png        模型对比与分层诊断图
 ```
 
 ### 5.5 早期探索存档
 
 ```text
 archive_exploratory/old_reports/     旧口径健康检查与归因报表
-archive_exploratory/scripts/         早期探索脚本（数据体检、派生列排查、基线核对等）
+archive_exploratory/scripts/         早期探索脚本（数据质量检查、派生列排查、基线核对等）
 ```
 
 该目录只读。新分析不要在此继续叠加文件，避免与正式口径混淆。
