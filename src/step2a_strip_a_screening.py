@@ -1,34 +1,33 @@
 # -*- coding: utf-8 -*-
 """
 ====================================================================
-第二步（试纸 A）：单兵尖子扫雷与双轨公平体检 (Step 2A: Strip A Screening)
+Step 2A：双轨单特征筛查
 ====================================================================
 【核心任务】
-在进入复杂机器学习建模（试纸 B 及后续建模）之前，先用最快、最透明、零编码偏误的方式，
-给清洗后的 75 个真实特征（+ 1 个随机噪声卧底特征）做一次“单兵能力公平大体检”。
+在多变量建模前，分别评估清洗后的 75 个特征，并加入 1 个随机噪声对照。
 
-【双轨公平法则（严禁乱编数字）】
-1. 轨道 1（49 个物理数值特征 + 1 个随机影子哨兵）：走“数字对数字”尺子
-   - Pearson r & 线性 R²（抓直线关系）
-   - Spearman rho（抓单调递增/递减关系，抗极端值）
-   - 15 分箱非线性 R²_binned + 单因素 F 检验（把数值切成最多 15 段，专抓 U 型/折线/台阶！）
-   - 抽样 1D 距离相关系数 dCor（n=2000，抓均值、方差及任意形状依赖）
+【双轨评价指标】
+1. 轨道 1（49 个物理数值特征 + 1 个随机噪声对照）：使用数值关联指标
+   - Pearson r & 线性 R²（测量线性关联）
+   - Spearman rho（测量单调关联，按秩计算）
+   - 15 分箱非线性 R²_binned + 单因素 F 检验（最多 15 个分位数区间，用于评估分段关系）
+   - 抽样 1D 距离相关系数 dCor（n=2000，用于评估一般统计依赖）
 
-2. 轨道 2（26 个无序文本特征）：走“文本对数字免编码”尺子（绝对不做 1,2,3 编码！）
+2. 轨道 2（26 个无序文本特征）：按类别分组计算
    - 相关比 Eta²（组间方差解释率，等价于 One-Hot 回归 R²）
-   - 无偏 Omega²（扣除类别数 k 的自由度水分，与数值轨道 R² 公平同台比较！）
+   - 无偏 Omega²（校正类别数偏差，与数值轨道 R² 并列参考）
    - 单因素 ANOVA F 检验 p 值
    - Kruskal-Wallis 秩检验 η²_H 与 p 值（抗异常生产批次扰动）
    - 抽样 0-1 离散度量 dCor（n=2000，仅判断“是否同一类别”，100% 满足标签置换不变性）
 
-3. 影子哨兵 + BH 多重检验校正（防靠运气蒙对）：
-   - 注入 1 列标准正态随机噪声 __shadow_random_noise__ 作为“纯混子基准线”。
+3. 随机噪声对照 + BH 多重检验校正：
+   - 注入 1 列标准正态随机噪声 __shadow_random_noise__ 作为对照。
    - 对全部 76 个条目统一执行 Benjamini-Hochberg (BH) FDR 校正，得到 q_value_bh。
 
-4. 统一尺度与红黄绿灯评级：
+4. 统一尺度与筛查评级：
    - 统一代表性有效解释率：数值列取 max(R²_linear, R²_binned)；文本列取无偏 ω²。
-   - 输出体检明细表 reports/step2a_strip_a_report.csv（UTF-8 BOM，Excel 直接打开不乱码）
-   - 输出直观双拼对比图 reports/step2a_strip_a_summary.png
+   - 输出筛查明细表 reports/step2a_strip_a_report.csv（UTF-8 BOM，Excel 直接打开不乱码）
+   - 输出直观双面板对比图 reports/step2a_strip_a_summary.png
 """
 
 import os
@@ -97,7 +96,7 @@ def compute_categorical_01_dcor(cat_sample: np.ndarray, B_y: np.ndarray, dvar_y_
     注意：这里只判断两个样本的字符串“是不是同一个名字”，完全不涉及大小或顺序，
     哪怕把所有代号随机换个名字，算出来的结果也 100% 一模一样（标签置换不变性）。
     """
-    # 为了加速矩阵比对，先临时映射为内部相等性编号（仅用于 != 判断，绝不参与大小运算）
+    # 为了加速矩阵比对，先临时映射为内部相等性编号（仅用于相等性比较）
     codes, _ = pd.factorize(cat_sample, sort=False)
     if len(np.unique(codes)) <= 1:
         return 0.0
@@ -116,7 +115,7 @@ def safe_clip_p(p_val: float) -> float:
 
 
 # ====================================================================
-# 第二部分：双轨体检核心计算函数
+# 第二部分：双轨筛查核心计算函数
 # ====================================================================
 
 def evaluate_numeric_feature(
@@ -130,7 +129,7 @@ def evaluate_numeric_feature(
     n_bins: int = 15,
 ) -> dict:
     """
-    【轨道 1】对单个数值特征（或随机影子哨兵）执行 4 大核心指标评估：
+    【轨道 1】对单个数值特征（或随机噪声对照）执行 4 大核心指标评估：
     1. Pearson r & 线性 R²_linear & p_linear
     2. Spearman rho & p_spearman
     3. 15 等频分箱非线性 R²_binned & F 检验 p_binned
@@ -222,8 +221,8 @@ def evaluate_categorical_feature(
 ) -> dict:
     """
     【轨道 2】对单个无序文本特征执行免编码分组评估：
-    1. 相关比 Eta²（等价于 One-Hot 解释率，含自由度水分）
-    2. 无偏校正 Omega²（挤掉高基数水分后，与数值轨道 R² 公平同台比较）
+    1. 相关比 Eta²（等价于 One-Hot 解释率，未校正类别数偏差）
+    2. 无偏校正 Omega²（校正类别数偏差，可与数值轨道 R² 并列参考）
     3. 单因素 ANOVA F 检验 p_anova
     4. Kruskal-Wallis 秩检验 η²_H 与 p_kw（抗极端批）
     5. 抽样 0-1 离散度量 dCor
@@ -290,19 +289,32 @@ def evaluate_categorical_feature(
 
 
 # ====================================================================
-# 第三部分：红黄绿灯评级与可视化出图
+# 第三部分：筛查评级与汇总图
 # ====================================================================
+
+SCREENING_RATINGS = (HIGH, MEDIUM, LOW, INSIGNIFICANT) = (
+    "HIGH", "MEDIUM", "LOW", "INSIGNIFICANT",
+)
+LOW_LINEAR_SIGNAL = "[LOW_LINEAR_SIGNAL]"
+LEGACY_RATINGS = {
+    "\U0001f7e2 强信号尖子生": HIGH,
+    "\U0001f7e1 明确有效 / 隐藏非线性": MEDIUM,
+    "\u26aa 微弱辅助信号": LOW,
+    "\U0001f534 无显著信号 / 建议弃用": INSIGNIFICANT,
+}
+LEGACY_LOW_LINEAR_SIGNAL = "[线性误杀预警]"
+
 
 def assign_traffic_light(
     row: dict,
     shadow_dcor: float,
 ) -> tuple:
     """
-    严格按照批准的《试纸 A 实施计划》执行四级红黄绿灯评定与预警标注：
-    - 🟢 强信号尖子生：q < 0.05 且 (有效解释率 >= 0.10 或 dCor >= 0.25)
-    - 🟡 明确有效 / 隐藏非线性：q < 0.05 且 (0.02 <= 有效解释率 < 0.10 或 dCor >= 0.12)
-    - ⚪ 微弱辅助信号：q < 0.05 且 0.003 <= 有效解释率 < 0.02
-    - 🔴 无显著信号 / 建议弃用：q >= 0.05，或 (有效解释率 < 0.003 且 dCor 未显著超越基准)
+    按有效解释率、距离相关和校正后 q 值分为四档：
+    - HIGH：q < 0.05 且 (有效解释率 >= 0.10 或 dCor >= 0.25)
+    - MEDIUM：q < 0.05 且 (0.02 <= 有效解释率 < 0.10 或 dCor >= 0.12)
+    - LOW：未达到更高评级时，至少达到有效解释率或噪声对照阈值
+    - INSIGNIFICANT：q >= 0.05，或 (有效解释率 < 0.003 且 dCor 未显著超越基准)
     """
     q_val = row["q_value_bh"]
     eff = row["effective_r2"]
@@ -311,36 +323,36 @@ def assign_traffic_light(
     feat = row["feature_name"]
 
     if q_val >= 0.05:
-        rating = "🔴 无显著信号 / 建议弃用"
+        rating = INSIGNIFICANT
     elif eff >= 0.10 or dcor >= 0.25:
-        rating = "🟢 强信号尖子生"
+        rating = HIGH
     elif eff >= 0.02 or dcor >= 0.12:
-        rating = "🟡 明确有效 / 隐藏非线性"
+        rating = MEDIUM
     elif eff >= 0.003:
-        rating = "⚪ 微弱辅助信号"
+        rating = LOW
     else:
-        # 有效解释率 < 0.003 且 dCor < 0.12：仅当 dCor 远超影子基准且接近门限时才给微弱信号，否则淘汰
+        # 有效解释率 < 0.003 且 dCor < 0.12：以 dCor 相对噪声基准的阈值区分 LOW 与 INSIGNIFICANT
         if dcor > max(0.08, shadow_dcor * 2.5):
-            rating = "⚪ 微弱辅助信号"
+            rating = LOW
         else:
-            rating = "🔴 无显著信号 / 建议弃用"
+            rating = INSIGNIFICANT
 
     # 生成清晰直白的备注提示
     notes = []
     if feat == "__shadow_random_noise__":
-        notes.append("[随机数卧底基准]")
+        notes.append("[NOISE_BASELINE]")
 
     if track == "numeric" and feat != "__shadow_random_noise__":
         r2_lin = row["r2_linear_num"]
-        if r2_lin < 0.01 and rating in ("🟢 强信号尖子生", "🟡 明确有效 / 隐藏非线性"):
-            notes.append("[线性误杀预警]")
+        if r2_lin < 0.01 and rating in (HIGH, MEDIUM):
+            notes.append(LOW_LINEAR_SIGNAL)
 
     if track == "categorical":
         inflation = row["eta2_num"] - row["omega2_num"]
         if inflation >= 0.02:
-            notes.append(f"[高基数水分已挤出 -{inflation * 100:.1f}%]")
+            notes.append(f"[CATEGORY_BIAS_ADJUSTMENT] η²−ω²={inflation * 100:.1f} 个百分点")
 
-    note_str = " ".join(notes) if notes else "正常"
+    note_str = " ".join(notes) if notes else "[PASS]"
     return rating, note_str
 
 
@@ -351,9 +363,9 @@ def plot_strip_a_summary(
     output_png_path: str,
 ) -> None:
     """
-    绘制高颜值、大白话中文标注的试纸 A 双拼体检图：
-    - 左图：Top 15 特征有效解释率横向对比（蓝=无序文本 ω²，橙=数值特征 max(R²)）+ 影子随机线
-    - 右图：49 个数值特征 传统线性 R² vs 15分箱非线性 R²_binned，高亮[线性误杀预警]黑马
+    绘制双轨筛查汇总图：
+    - 左图：Top 15 特征有效解释率横向对比（蓝=无序文本 ω²，橙=数值特征 max(R²)）+ 随机噪声参考线
+    - 右图：49 个数值特征 传统线性 R² vs 15分箱非线性 R²_binned，标记低线性解释率特征
     """
     # 解决 Windows 下 Matplotlib 中文及负号显示问题
     plt.rcParams["font.sans-serif"] = ["Microsoft YaHei", "SimHei", "DejaVu Sans"]
@@ -363,9 +375,10 @@ def plot_strip_a_summary(
     fig.patch.set_facecolor("#FFFFFF")
 
     # ------------------------------------------------------------
-    # 左图：Top 15 特征横向条形图（剔除影子列本身，影子列用竖虚线标基准）
+    # 左图：Top 15 特征横向条形图（剔除噪声对照列本身，噪声对照列用竖虚线标基准）
     # ------------------------------------------------------------
     ax1 = axes[0]
+    report_df = report_df.rename(columns={"体检评级": "筛查评级"})
     real_df = report_df[report_df["特征名称"] != "__shadow_random_noise__"].copy()
     top15 = real_df.head(15).iloc[::-1]  # 倒序使第 1 名在最上方
 
@@ -386,20 +399,22 @@ def plot_strip_a_summary(
         alpha=0.92,
     )
 
-    # 影子基准虚线
+    # 噪声对照基准虚线
     shadow_pct = shadow_eff * 100.0
     ax1.axvline(
         x=shadow_pct,
         color="#D62828",
         linestyle="--",
         linewidth=1.8,
-        label=f"影子随机噪声基准 ({shadow_pct:.3f}%)",
+        label=f"随机噪声对照 ({shadow_pct:.3f}%)",
     )
 
     # 条形末端标注具体数值与预警标签
     for bar, (_, row) in zip(bars, top15.iterrows()):
         val_pct = row["有效解释率"] * 100.0
-        tag = " ★线性误杀黑马" if "[线性误杀预警]" in str(row["备注提示"]) else ""
+        note = str(row["备注提示"])
+        has_low_linear_signal = LOW_LINEAR_SIGNAL in note or LEGACY_LOW_LINEAR_SIGNAL in note
+        tag = " 低线性解释率" if has_low_linear_signal else ""
         ax1.text(
             val_pct + 0.45,
             bar.get_y() + bar.get_height() / 2.0,
@@ -414,7 +429,7 @@ def plot_strip_a_summary(
     ax1.set_yticks(y_pos)
     ax1.set_yticklabels(top15["特征名称"].values, fontsize=9.5, color="#222222")
     ax1.set_xlabel("有效方差解释率 (数值取 max(R²_linear, R²_binned)，文本取无偏 ω²) [%]", fontsize=10.5)
-    ax1.set_title("Top 15 单兵尖子生排行榜（双轨公平同台）", fontsize=13, fontweight="bold", pad=12)
+    ax1.set_title("有效解释率前 15 的特征", fontsize=13, fontweight="bold", pad=12)
     ax1.set_xlim(0, max(top15["有效解释率"].max() * 100.0 * 1.22, 10.0))
     ax1.grid(axis="x", linestyle=":", alpha=0.4)
     ax1.spines["top"].set_visible(False)
@@ -425,7 +440,7 @@ def plot_strip_a_summary(
     legend_handles = [
         Patch(facecolor="#2A7B9B", label="无序文本特征 (免编码无偏 ω²)"),
         Patch(facecolor="#E07A5F", label="数值特征 (max 线性/分箱 R²)"),
-        plt.Line2D([0], [0], color="#D62828", linestyle="--", linewidth=1.8, label=f"影子噪声基准 ({shadow_pct:.3f}%)"),
+        plt.Line2D([0], [0], color="#D62828", linestyle="--", linewidth=1.8, label=f"随机噪声对照 ({shadow_pct:.3f}%)"),
     ]
     ax1.legend(handles=legend_handles, loc="lower right", fontsize=9, frameon=True, facecolor="#F9FAFB")
 
@@ -439,10 +454,10 @@ def plot_strip_a_summary(
 
     max_lim = max(float(np.max(x_lin)), float(np.max(y_bin)), 5.0) * 1.12
 
-    # 画 y = x 对角线（在上方说明分箱捕获到了线性没抓到的非线性信号）
+    # 画 y = x 对角线，其上方为分箱解释率高于线性解释率的点
     ax2.plot([0, max_lim], [0, max_lim], linestyle="--", color="#6C757D", linewidth=1.3, label="y = x (纯线性参照线)")
-    # 画 x = 1% 线性误杀警戒线
-    ax2.axvline(x=1.0, linestyle=":", color="#D62828", linewidth=1.4, label="线性 R² = 1% 误杀警戒线")
+    # 画 x = 1% 解释率参考线
+    ax2.axvline(x=1.0, linestyle=":", color="#D62828", linewidth=1.4, label="线性 R² = 1% 参考线")
 
     # 普通数值点
     ax2.scatter(
@@ -457,21 +472,21 @@ def plot_strip_a_summary(
         zorder=3,
     )
 
-    # 线性误杀黑马点
+    # 低线性解释率特征点
     if np.any(is_ambush):
         ax2.scatter(
             x_lin[is_ambush],
             y_bin[is_ambush],
             c="#E63946",
-            marker="*",
-            s=220,
+            marker="D",
+            s=80,
             edgecolors="#330000",
             linewidth=0.8,
-            label="线性误杀黑马 (线性<1% 但非线性达标)",
+            label="低线性解释率提示",
             zorder=5,
         )
 
-    # 标注关键点位名称：仅标注最具代表性的 Top 5 线性误杀黑马 + Top 3 数值尖子，避免密集文字堆叠重叠
+    # 标注关键点位名称：仅标注最具代表性的 Top 5 低线性解释率特征 + 前 3 个数值特征，避免密集文字堆叠重叠
     top_num_names = list(
         numeric_df.sort_values("effective_r2", ascending=False).head(3)["feature_name"]
     )
@@ -479,7 +494,7 @@ def plot_strip_a_summary(
         numeric_df[is_ambush].sort_values("r2_binned_num", ascending=False).head(5)["feature_name"]
     )
 
-    # 分别以错落有致的坐标偏移标注，确保零文字遮挡
+    # 按点位设置标签偏移
     for feat_name in top_num_names:
         r = numeric_df[numeric_df["feature_name"] == feat_name].iloc[0]
         px = r["r2_linear_num"] * 100.0
@@ -519,12 +534,12 @@ def plot_strip_a_summary(
             arrowprops=dict(arrowstyle="->", color="#E63946", lw=0.8),
         )
 
-    # 在空白区域加一个小卡片提示总黑马数
+    # 标注低线性解释率提示数
     ambush_cnt = int(np.sum(is_ambush))
     ax2.text(
         0.97,
         0.23,
-        f"雷达共救回 {ambush_cnt} 个被线性 R² 误杀的特征\n(线性 < 1%，但分箱非线性或 dCor 显著达标)",
+        f"{ambush_cnt} 个数值特征触发低线性解释率提示\n(线性 < 1%，但分箱非线性或 dCor 显著达标)",
         transform=ax2.transAxes,
         ha="right",
         va="bottom",
@@ -535,7 +550,7 @@ def plot_strip_a_summary(
 
     ax2.set_xlabel("传统线性解释率 R²_linear [%]", fontsize=10.5)
     ax2.set_ylabel("15 分箱非线性解释率 R²_binned [%]", fontsize=10.5)
-    ax2.set_title("49 个数值特征：传统线性 vs 分箱非线性抓黑马雷达", fontsize=13, fontweight="bold", pad=12)
+    ax2.set_title("线性与分箱解释率对照", fontsize=13, fontweight="bold", pad=12)
     ax2.set_xlim(-max_lim * 0.03, max_lim)
     ax2.set_ylim(-max_lim * 0.03, max_lim)
     ax2.grid(True, linestyle=":", alpha=0.4)
@@ -543,14 +558,14 @@ def plot_strip_a_summary(
     ax2.spines["right"].set_visible(False)
     ax2.legend(loc="lower right", fontsize=9, frameon=True, facecolor="#F9FAFB")
 
-    # 总体大标题（汇总红黄绿灯分布，使用纯中文括号标识避免 Windows 字体缺 Emoji 方框）
-    counts = real_df["体检评级"].value_counts().to_dict()
-    g_cnt = counts.get("🟢 强信号尖子生", 0)
-    y_cnt = counts.get("🟡 明确有效 / 隐藏非线性", 0)
-    w_cnt = counts.get("⚪ 微弱辅助信号", 0)
-    r_cnt = counts.get("🔴 无显著信号 / 建议弃用", 0)
+    # 汇总真实特征的评级分布
+    counts = real_df["筛查评级"].replace(LEGACY_RATINGS).value_counts().to_dict()
+    g_cnt = counts.get(HIGH, 0)
+    y_cnt = counts.get(MEDIUM, 0)
+    w_cnt = counts.get(LOW, 0)
+    r_cnt = counts.get(INSIGNIFICANT, 0)
     fig.suptitle(
-        f"试纸 A 单兵双轨体检总览（75 个真特征：[绿灯]强信号 {g_cnt} | [黄灯]有效/非线性 {y_cnt} | [灰灯]微弱 {w_cnt} | [红灯]无显著 {r_cnt}）",
+        f"Step 2A 双轨单特征筛查（{len(real_df)} 个特征：HIGH {g_cnt} | MEDIUM {y_cnt} | LOW {w_cnt} | INSIGNIFICANT {r_cnt}）",
         fontsize=14.5,
         fontweight="bold",
         y=0.98,
@@ -574,13 +589,13 @@ def run_strip_a_screening(
     random_state: int = 42,
 ) -> pd.DataFrame:
     """
-    执行完整的试纸 A 体检流程并导出 CSV 报告与 PNG 可视化图表。
+    执行 Step 2A 单特征筛查并导出 CSV 报告与 PNG 可视化图表。
     """
     t0 = time.perf_counter()
     os.makedirs(os.path.dirname(report_csv_path), exist_ok=True)
 
     print("=" * 72)
-    print("🧪 启动【试纸 A】单兵尖子扫雷与双轨公平体检 (Step 2A)")
+    print("[INFO] 启动 Step 2A 双轨单特征筛查")
     print("=" * 72)
 
     # 1. 读取特征元数据（严格区分数值列与无序文本列）
@@ -591,12 +606,12 @@ def run_strip_a_screening(
     numeric_cols = list(schema["numeric_features"])
     categorical_cols = list(schema["categorical_features"])
 
-    # 关键防坑：读取 CSV 时强制将 26 个无序文本列按字符串读入，严禁 pandas 自动转成数字！
+    # 按字符串读取类别列，保留数值形式的代号。
     dtype_map = {col: str for col in categorical_cols}
     df = pd.read_csv(data_path, dtype=dtype_map, keep_default_na=False)
     n_rows = len(df)
-    print(f"📂 已加载洁净数据集：{n_rows:,} 行 × {df.shape[1]} 列 | 目标列：{target_col}")
-    print(f"   - 轨道 1（数值特征）：{len(numeric_cols)} 个 + 1 个随机影子哨兵")
+    print(f"[INFO] 已加载清洗数据集：{n_rows:,} 行 × {df.shape[1]} 列 | 目标列：{target_col}")
+    print(f"   - 轨道 1（数值特征）：{len(numeric_cols)} 个 + 1 个随机噪声对照")
     print(f"   - 轨道 2（无序文本特征，免编码原字符分组）：{len(categorical_cols)} 个")
 
     # 2. 提取目标列与全局方差准备
@@ -604,7 +619,7 @@ def run_strip_a_screening(
     y_mean = float(np.mean(y))
     ss_total = float(np.sum((y - y_mean) ** 2))
 
-    # 3. 注入影子哨兵列（固定随机种子 42 生成标准正态白噪声）
+    # 3. 注入随机噪声对照列（固定随机种子 42 生成标准正态白噪声）
     rng = np.random.RandomState(random_state)
     shadow_col_name = "__shadow_random_noise__"
     shadow_values = rng.normal(loc=0.0, scale=1.0, size=n_rows)
@@ -616,14 +631,14 @@ def run_strip_a_screening(
     dist_y = np.abs(y_sample[:, None] - y_sample[None, :])
     B_y = compute_double_centered_matrix(dist_y)
     dvar_y_sq = float(np.mean(B_y * B_y))
-    print(f"🎯 dCor 抽样矩阵预计算完成（n={sample_n}，固定种子={random_state}）...")
+    print(f"[INFO] dCor 抽样矩阵预计算完成（n={sample_n}，固定种子={random_state}）...")
 
     records = []
 
-    # 5. 运行轨道 1：49 个数值特征 + 1 个影子哨兵
+    # 5. 运行轨道 1：49 个数值特征 + 1 个随机噪声对照
     t_track1 = time.perf_counter()
     track1_features = [(col, df[col].to_numpy(dtype=np.float64), "数值特征") for col in numeric_cols]
-    track1_features.append((shadow_col_name, shadow_values, "影子随机哨兵"))
+    track1_features.append((shadow_col_name, shadow_values, "随机噪声对照"))
 
     for feat_name, x_arr, feat_label in track1_features:
         res = evaluate_numeric_feature(
@@ -663,7 +678,7 @@ def run_strip_a_screening(
             "kw_eta2_h_num": np.nan,
             "p_kw_num": np.nan,
         })
-    print(f"⏱️ 轨道 1（50 项数值/影子评估）完成，耗时 {time.perf_counter() - t_track1:.2f} 秒")
+    print(f"[INFO] 轨道 1（50 项数值/噪声对照评估）完成，耗时 {time.perf_counter() - t_track1:.2f} 秒")
 
     # 6. 运行轨道 2：26 个无序文本特征（绝对免编码！）
     t_track2 = time.perf_counter()
@@ -706,7 +721,7 @@ def run_strip_a_screening(
             "kw_eta2_h_num": res["kw_eta2_h"],
             "p_kw_num": res["p_kw"],
         })
-    print(f"⏱️ 轨道 2（26 项无序文本免编码评估）完成，耗时 {time.perf_counter() - t_track2:.2f} 秒")
+    print(f"[INFO] 轨道 2（26 项无序文本免编码评估）完成，耗时 {time.perf_counter() - t_track2:.2f} 秒")
 
     # 7. 全局 BH 多重检验校正（76 项一起校正）
     p_raw_array = np.array([r["p_raw"] for r in records], dtype=np.float64)
@@ -714,17 +729,17 @@ def run_strip_a_screening(
     for r, q_val in zip(records, q_values):
         r["q_value_bh"] = float(q_val)
 
-    # 找到影子哨兵指标，作为红黄绿灯及画图的参考基准
+    # 找到随机噪声对照指标，作为筛查及画图的参考基准
     shadow_rec = next(r for r in records if r["feature_name"] == shadow_col_name)
     shadow_eff = shadow_rec["effective_r2"]
     shadow_dcor = shadow_rec["dcor"]
 
-    # 8. 评定红黄绿灯与备注预警
+    # 8. 评定筛查与备注预警
     for r in records:
         rating, note_str = assign_traffic_light(r, shadow_dcor=shadow_dcor)
         r["rating"] = rating
         r["note"] = note_str
-        r["is_linear_ambush"] = ("[线性误杀预警]" in note_str)
+        r["is_linear_ambush"] = (LOW_LINEAR_SIGNAL in note_str)
 
     # 9. 按有效解释率降序排序，并组装 0 NaN 的导出报表（跨轨道不适用项以 "-" 填充）
     records_sorted = sorted(records, key=lambda d: d["effective_r2"], reverse=True)
@@ -751,7 +766,7 @@ def run_strip_a_screening(
             "特征名称": r["feature_name"],
             "特征类型": r["feat_label"],
             "有效解释率": round(r["effective_r2"], 6),
-            "体检评级": r["rating"],
+            "筛查评级": r["rating"],
             "主检测_p值": r["p_raw"],
             "BH校正_q值": r["q_value_bh"],
             "距离相关_dCor": round(r["dcor"], 6),
@@ -776,7 +791,7 @@ def run_strip_a_screening(
     # 导出 UTF-8 BOM CSV（Excel 直接双击打开不乱码）
     report_df.to_csv(report_csv_path, index=False, encoding="utf-8-sig")
 
-    # 10. 绘制双拼总结图
+    # 10. 绘制双面板总结图
     numeric_only_df = pd.DataFrame([
         r for r in records_sorted
         if r["track"] == "numeric" and r["feature_name"] != shadow_col_name
@@ -790,52 +805,52 @@ def run_strip_a_screening(
 
     total_time = time.perf_counter() - t0
 
-    # 11. 控制台汇总打印与试纸 A 综合 Pass/Caution/Fail 结论
+    # 11. 汇总筛查评级与整体状态
     real_only = report_df[report_df["特征名称"] != shadow_col_name]
-    rating_counts = real_only["体检评级"].value_counts()
+    rating_counts = real_only["筛查评级"].value_counts()
     top3 = real_only.head(3)
     top1_eff = float(top3.iloc[0]["有效解释率"])
     top1_q = float(top3.iloc[0]["BH校正_q值"])
 
     if top1_eff >= 0.10 and top1_q < 0.05:
-        verdict = "PASS（存在显著强信号尖子生，数据富含可解释物理与工艺规律，建议继续试纸 B 团战探针）"
+        verdict = "[PASS] 首位特征显著且有效解释率至少为 10%"
     elif top1_eff >= 0.02 and top1_q < 0.05:
-        verdict = "CAUTION（信号中等偏弱，存在一定规律但需警惕多特征组合交互或分群效应）"
+        verdict = "[WARN] 首位特征显著且有效解释率介于 2% 和 10% 之间"
     else:
-        verdict = "FAIL（单变量均未见明显解释力，需排查目标定义或纯随机波动）"
+        verdict = "[FAIL] 首位特征未达到综合筛查阈值"
 
     print("\n" + "=" * 72)
-    print(f"✅ 试纸 A 体检全部完成！总耗时：{total_time:.2f} 秒")
-    print(f"📄 报表导出：{report_csv_path}（共 {len(report_df)} 行 × {report_df.shape[1]} 列）")
-    print(f"🖼️ 图表导出：{summary_png_path}")
+    print(f"[PASS] Step 2A 筛查完成。总耗时：{total_time:.2f} 秒")
+    print(f"[INFO] 报表导出：{report_csv_path}（共 {len(report_df)} 行 × {report_df.shape[1]} 列）")
+    print(f"[INFO] 图表导出：{summary_png_path}")
     print("-" * 72)
-    print("📊 75 个真特征红黄绿灯分布：")
-    for label in ["🟢 强信号尖子生", "🟡 明确有效 / 隐藏非线性", "⚪ 微弱辅助信号", "🔴 无显著信号 / 建议弃用"]:
+    print("[INFO] 真实特征筛查评级分布：")
+    for label in SCREENING_RATINGS:
         print(f"   {label:20s}: {int(rating_counts.get(label, 0)):2d} 个")
 
     shadow_row = report_df[report_df["特征名称"] == shadow_col_name].iloc[0]
     print("-" * 72)
-    print("🕵️ 影子哨兵卧底表现（基准对照）：")
+    print("[INFO] 随机噪声对照结果：")
     print(
         f"   排名 #{int(shadow_row['排名'])} | 有效解释率={shadow_row['有效解释率']:.6f} "
         f"| dCor={shadow_row['距离相关_dCor']:.6f} | q={shadow_row['BH校正_q值']:.4f} "
-        f"| 评级={shadow_row['体检评级']}"
+        f"| 评级={shadow_row['筛查评级']}"
     )
 
     print("-" * 72)
-    print("🏆 Top 15 单兵尖子生榜单：")
+    print("[INFO] 有效解释率前 15 的特征：")
     for _, row in real_only.head(15).iterrows():
         print(
             f"   #{int(row['排名']):2d} | {row['特征名称']:52s} | {row['特征类型']:6s} "
             f"| 有效解释率={row['有效解释率']*100:6.2f}% | dCor={row['距离相关_dCor']:.3f} "
-            f"| {row['体检评级']} {row['备注提示']}"
+            f"| {row['筛查评级']} {row['备注提示']}"
         )
 
-    ambush_df = real_only[real_only["备注提示"].str.contains("线性误杀预警", na=False)]
+    ambush_df = real_only[real_only["备注提示"].str.contains(LOW_LINEAR_SIGNAL, regex=False, na=False)]
     print("-" * 72)
-    print(f"⚡ 抓获【线性误杀预警】黑马特征（{len(ambush_df)} 个）：")
+    print(f"[INFO] 低线性解释率提示（{len(ambush_df)} 个）：")
     if len(ambush_df) == 0:
-        print("   （本次未发现线性<1%但非线性突围的数值特征）")
+        print("   本次无低线性解释率提示。")
     else:
         for _, row in ambush_df.iterrows():
             print(
@@ -844,7 +859,7 @@ def run_strip_a_screening(
             )
 
     print("-" * 72)
-    print(f"🏁 试纸 A 综合裁决：{verdict}")
+    print(f"{verdict}")
     print("=" * 72)
 
     return report_df

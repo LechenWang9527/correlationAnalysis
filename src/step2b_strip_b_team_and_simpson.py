@@ -1,32 +1,31 @@
 # -*- coding: utf-8 -*-
 """
 ====================================================================
-第二步（试纸 B）：素颜树团战探针 + Y-Scrambling 检验 + 辛普森悖论分家排查
-(Step 2B: Strip B - Team Probe, Y-Scrambling & Simpson's Paradox Audit)
+Step 2B：多变量模型对比、目标置换检验与分层诊断
+(Step 2B: Multivariable Models, Target Permutation, and Stratified Diagnostics)
 ====================================================================
 【核心任务】
-试纸 A 看完了每个特征的“单兵作战能力”，现在进入试纸 B，重点排查三件事：
-1. 【团战合作探针（5,000 行 5 折交叉验证，绝对零泄露）】：
-   - 对比三个选手：Dummy 基线（全猜平均值）、Ridge 线性对照、HistGBDT 素颜浅层树。
-   - 对 26 个无序文本特征实行“因材施教”：
+在 Step 2A 单特征筛查后，进行以下三项检查：
+1. 【多变量模型对比（5,000 行，5 折交叉验证）】：
+   - 对比预测训练集均值的 Dummy 基线、Ridge 线性模型和 HistGBDT 模型。
+   - 对 26 个无序文本特征实行“按类别基数选择编码”：
      * 4 个超高基数 ID/几何代号列（类别数 > 250）：Pipeline 内部使用 TargetEncoder
-       （5 折平滑目标编码，杜绝过拟合与维度爆炸）；
+       （训练折内采用 5 折平滑目标编码）；
      * 22 个低/中基数无序文本列（<= 250）：OrdinalEncoder + HistGBDT 原生类别切分
-       （或者给 Ridge 用 OneHotEncoder），绝不把编码序号当成大小关系！
-2. 【防靠运气蒙对（19 次 Y-Scrambling 洗牌 + 影子卧底）】：
-   - 把目标列 ActualVsIEGap 随机洗牌 19 次，每次重跑完整 5 折 HistGBDT 管道，
-     用 Phipson & Smyth 公式计算置换检验 p = (C + 1) / (M + 1)，看真实分数是否
-     碾压纯随机洗牌。
+       （或者给 Ridge 用 OneHotEncoder），编码值用于区分类别。
+2. 【19 次目标置换检验与随机噪声对照】：
+   - 把目标列 ActualVsIEGap 随机置换 19 次，每次重跑完整 5 折 HistGBDT 管道，
+     用 Phipson & Smyth 公式计算置换检验 p = (C + 1) / (M + 1)，比较原目标与随机置换目标的评分。
    - 注入 1 列标准正态噪声 __shadow_random_noise__，在 80/20 留出验证集上跑
-     Permutation Importance，检验核心特征是否把“卧底”甩开十万八千里。
-3. 【全量 53,145 行辛普森悖论分家排查】：
-   - 分别按主力机台（WorkCenterNameCoupled，样本量 >= 200）和主力轮胎规格
-     （tire_size，样本量 >= 200）切片，检查 49 个数值特征在各个“小圈子”内的
-     Pearson r 极值、跨度 r_span 与正负撕裂情况，揪出被全表均值掩盖的真相！
+     Permutation Importance，用随机噪声的重要度作为对照。
+3. 【全量 53,145 行辛普森悖论分层诊断】：
+   - 分别按有效机台（WorkCenterNameCoupled，样本量 >= 200）和有效轮胎规格
+     （tire_size，样本量 >= 200）切片，检查 49 个数值特征在各有效分组内的
+     Pearson r 极值和跨度 r_span，检查组内方向反转及总体弱相关与分层强相关。
 
 【导出产物】
-- reports/step2b_strip_b_simpson_report.csv（UTF-8 BOM，0 NaN，按最大撕裂跨度降序）
-- reports/step2b_strip_b_summary.png（双拼总结图：左图团战+洗牌检验，右图 Top10 哑铃图）
+- reports/step2b_strip_b_simpson_report.csv（UTF-8 BOM，0 NaN，按最大组内相关跨度降序）
+- reports/step2b_strip_b_summary.png（双面板总结图：左图多变量模型+置换检验，右图 Top10 哑铃图）
 """
 
 import os
@@ -49,7 +48,7 @@ from sklearn.preprocessing import OneHotEncoder, OrdinalEncoder, StandardScaler,
 
 
 # ====================================================================
-# 第一部分：零泄露建模管道构造器（Dummy / Ridge / HistGBDT）
+# 第一部分：折内预处理建模管道构造器（Dummy / Ridge / HistGBDT）
 # ====================================================================
 
 def build_ridge_pipeline(
@@ -62,7 +61,7 @@ def build_ridge_pipeline(
     构造防泄露的 Ridge 线性对照管道：
     - 超高基数文本列（>250 类）：TargetEncoder（在每折训练集内部做 cv=5 平滑编码）
     - 低/中基数文本列（<=250 类）：OneHotEncoder(handle_unknown='ignore')
-    - 数值列（含影子列）：StandardScaler 标准化（均在折内 fit，绝不提前看验证集！）
+    - 数值列（含噪声对照列）：StandardScaler 标准化（在每个训练折内拟合）
     - 模型：Ridge(alpha=10.0) 正则化线性回归
     """
     preprocessor = ColumnTransformer(
@@ -105,12 +104,12 @@ def build_hgb_pipeline(
     random_state: int = 42,
 ) -> Pipeline:
     """
-    构造防泄露的素颜浅层树（HistGradientBoostingRegressor）管道：
+    构造防泄露的浅层梯度提升树（HistGradientBoostingRegressor）管道：
     - 超高基数文本列（>250 类）：TargetEncoder（避免超出 HistGBDT 最大 255 类限制）
     - 低/中基数文本列（<=250 类）：OrdinalEncoder（未知类别映射为 np.nan）
       随后直接把这几列的索引交给 HistGBDT 的 categorical_features 参数，
-      让树模型执行原生无序集合切分（Fisher 精确最优分裂），绝不把编码数字当大小！
-    - 数值列（含影子列）：直接 passthrough
+      让树模型执行原生无序集合切分（Fisher 精确最优分裂），编码仅用于区分类别。
+    - 数值列（含噪声对照列）：直接 passthrough
     """
     preprocessor = ColumnTransformer(
         transformers=[
@@ -163,14 +162,14 @@ def build_hgb_pipeline(
 
 
 # ====================================================================
-# 第二部分：全量辛普森悖论分家排查工具函数
+# 第二部分：全量辛普森悖论分层诊断工具函数
 # ====================================================================
 
 def safe_pearson_r(x: np.ndarray, y: np.ndarray) -> float:
     """
     安全计算一维数组 x 与 y 的 Pearson 相关系数 r：
     若任一数组标准差接近 0（常数列，比如某个机台只生产同一款轮胎），
-    则返回 np.nan 以便上层安全跳过，绝不抛出 RuntimeWarning 或产生脏数值。
+    则返回 np.nan 以便上层安全跳过，避免无效的相关系数。
     """
     if len(x) < 3:
         return np.nan
@@ -191,13 +190,13 @@ def compute_slice_correlations(
     min_samples: int = 200,
 ) -> tuple:
     """
-    在完整数据集上按 group_col 分组（仅保留样本量 >= min_samples 的主力组），
-    批量向量化计算 49 个数值特征在每个主力组内与 target_col 的 Pearson r。
+    在完整数据集上按 group_col 分组（仅保留样本量 >= min_samples 的有效分组），
+    批量向量化计算 49 个数值特征在每个有效分组内与 target_col 的 Pearson r。
 
     返回：
     - stats_dict: {feature_name: {"r_max": ..., "group_max": ..., "r_min": ..., "group_min": ..., "r_span": ..., "n_valid_groups": ...}}
     - n_qualifying_groups: 满足样本量 >= min_samples 的组数
-    - covered_rows: 这些主力组总共覆盖的样本行数
+    - covered_rows: 这些有效分组总共覆盖的样本行数
     """
     group_counts = df[group_col].value_counts()
     qualifying_groups = group_counts[group_counts >= min_samples].index.tolist()
@@ -266,8 +265,8 @@ def compute_slice_correlations(
 def check_simpson_triggers(r_global: float, r_max: float, r_min: float, n_valid: int) -> tuple:
     """
     判断单一分组维度下是否触发辛普森悖论警报：
-    1. 正负双向撕裂：r_max > 0.20 且 r_min < -0.20（不同圈子关系完全相反！）
-    2. 全局失明掩盖：|r_global| < 0.05 且 max(|r_max|, |r_min|) >= 0.30（全表假装没关系，局部强相关！）
+    1. 组内相关方向反转：r_max > 0.20 且 r_min < -0.20
+    2. 总体弱相关与分层强相关：|r_global| < 0.05 且 max(|r_max|, |r_min|) >= 0.30
     """
     if n_valid < 2:
         return False, False
@@ -277,7 +276,7 @@ def check_simpson_triggers(r_global: float, r_max: float, r_min: float, n_valid:
 
 
 # ====================================================================
-# 第三部分：双拼可视化图表（团战+洗牌检验 & 辛普森哑铃对比图）
+# 第三部分：双面板可视化图表（多变量模型+置换检验 & 辛普森哑铃对比图）
 # ====================================================================
 
 def truncate_label(text: str, max_len: int = 16) -> str:
@@ -295,11 +294,11 @@ def plot_strip_b_summary(
     output_png_path: str,
 ) -> None:
     """
-    绘制试纸 B 双拼可视化大图：
-    - 左图：5,000 行 5 折交叉验证团战对比（Dummy / Ridge / HistGBDT）+ 19 次 Y-Scrambling 噪声分布
-    - 右图：全量 53,145 行 Top 10 最撕裂辛普森特征哑铃图（灰点=全表相关，红/蓝点=最强正/负切片相关）
+    绘制Step 2B 双面板可视化大图：
+    - 左图：5,000 行 5 折交叉验证多变量模型对比（Dummy / Ridge / HistGBDT）+ 19 次 Y-Scrambling 噪声分布
+    - 右图：全量 53,145 行 Top 10 最大组内相关跨度辛普森特征哑铃图（灰点=全表相关，红/蓝点=最强正/负切片相关）
     """
-    # 配置 Windows 下中文字体并确保负号正常显示（图内避免使用 Emoji 防方框乱码）
+    # 配置 Windows 下中文字体并确保负号正常显示
     plt.rcParams["font.sans-serif"] = ["Microsoft YaHei", "SimHei", "DejaVu Sans"]
     plt.rcParams["axes.unicode_minus"] = False
 
@@ -307,14 +306,14 @@ def plot_strip_b_summary(
     fig.patch.set_facecolor("#FFFFFF")
 
     # ----------------------------------------------------------------
-    # 左图：模型团战对比 + 19 次 Y-Scrambling 随机洗牌对比
+    # 左图：模型多变量模型对比 + 19 次 Y-Scrambling 随机置换对比
     # ----------------------------------------------------------------
     ax1 = axes[0]
     model_labels = [
         "Dummy 基线\n(均值猜测)",
         "Ridge 线性\n(防泄露对照)",
-        "HistGBDT 素颜树\n(真实目标)",
-        "HistGBDT 洗牌\n(19次Y打乱)",
+        "HistGBDT\n(原始目标)",
+        "HistGBDT\n(目标置换)",
     ]
     x_pos = np.arange(len(model_labels))
 
@@ -389,7 +388,7 @@ def plot_strip_b_summary(
 
     ax1.axhline(0.0, color="#374151", linestyle="--", linewidth=1.1, alpha=0.7, zorder=2)
 
-    # 标注洗牌均值与 Phipson & Smyth p 值
+    # 标注置换均值与 Phipson & Smyth p 值
     scram_med = float(np.median(scrambled_r2_pct))
     scram_max = float(np.max(scrambled_r2_pct))
     ax1.text(
@@ -403,7 +402,7 @@ def plot_strip_b_summary(
         color="#92400E",
     )
 
-    # 左下角/右上角放置“影子卧底与留出集质检”总结卡片
+    # 左下角/右上角放置“随机噪声对照与留出集质检”总结卡片
     shadow_rank = holdout_info["shadow_rank"]
     shadow_imp = holdout_info["shadow_imp"]
     top1_name = holdout_info["top1_name"]
@@ -411,11 +410,11 @@ def plot_strip_b_summary(
     n_beat_shadow = holdout_info["n_beat_shadow"]
     val_r2_pct = holdout_info["val_r2"] * 100.0
     card_text = (
-        f"[80/20 留出集与影子卧底质检]\n"
-        f"• 留出集验证 R² = {val_r2_pct:.2f}% (MAE = {holdout_info['val_mae']:.2f})\n"
-        f"• 影子噪声排名 #{shadow_rank}/76 (重要度 = {shadow_imp:.5f})\n"
-        f"• 榜首特征 {top1_name} 重要度 = {top1_imp:.4f}\n"
-        f"• 共 {n_beat_shadow}/75 个真特征重要度高于影子噪声"
+        f"[80/20 留出集与随机噪声对照]\n"
+        f"留出集验证 R² = {val_r2_pct:.2f}% (MAE = {holdout_info['val_mae']:.2f})\n"
+        f"随机噪声对照排名 #{shadow_rank}/76 (重要度 = {shadow_imp:.5f})\n"
+        f"榜首特征 {top1_name} 重要度 = {top1_imp:.4f}\n"
+        f"共 {n_beat_shadow}/75 个真特征重要度高于随机噪声对照"
     )
     ax1.text(
         0.03,
@@ -435,19 +434,23 @@ def plot_strip_b_summary(
     ax1.set_xticks(x_pos)
     ax1.set_xticklabels(model_labels, fontsize=9.8, fontweight="bold", color="#111827")
     ax1.set_ylabel("5 折交叉验证解释率 R² [%]", fontsize=10.8)
-    ax1.set_title("团战模型大比拼 vs 19 次 Y-Scrambling 真实性检验", fontsize=12.8, fontweight="bold", pad=12)
+    ax1.set_title("交叉验证模型对比与目标置换检验", fontsize=12.8, fontweight="bold", pad=12)
     ax1.grid(axis="y", linestyle=":", alpha=0.45)
     ax1.spines["top"].set_visible(False)
     ax1.spines["right"].set_visible(False)
 
     # ----------------------------------------------------------------
-    # 右图：Top 10 最撕裂辛普森悖论特征哑铃对比图
+    simpson_df = simpson_df.rename(columns={
+        "最大撕裂跨度": "最大组内相关跨度",
+        "最大撕裂维度": "最大跨度分层维度",
+    })
+    # 右图：Top 10 最大组内相关跨度辛普森悖论特征哑铃对比图
     # ----------------------------------------------------------------
     ax2 = axes[1]
     top10 = simpson_df.head(10).iloc[::-1].reset_index(drop=True)  # 倒序使第 1 名在最上方
     y_idx = np.arange(len(top10))
 
-    # 阴影标出 [-0.05, +0.05] 全局失明微弱区
+    # 阴影标出 [-0.05, +0.05] 总体弱相关参考区
     ax2.axvspan(-0.05, 0.05, color="#F3F4F6", alpha=0.9, zorder=1, label="全局微弱区 (|r|<0.05)")
     ax2.axvline(0.0, color="#6B7280", linestyle="--", linewidth=1.2, zorder=2)
 
@@ -458,8 +461,8 @@ def plot_strip_b_summary(
         r_max = float(row["主导切片_r_max"])
         g_min = truncate_label(row["主导切片_最负组"], 14)
         g_max = truncate_label(row["主导切片_最正组"], 14)
-        dim_short = "按机台" if "机台" in str(row["最大撕裂维度"]) else "按规格"
-        span_val = float(row["最大撕裂跨度"])
+        dim_short = "按机台" if "机台" in str(row["最大跨度分层维度"]) else "按规格"
+        span_val = float(row["最大组内相关跨度"])
 
         # 连接线（红蓝哑铃杆）
         ax2.plot([r_min, r_max], [i, i], color="#9CA3AF", linewidth=2.6, alpha=0.85, zorder=3)
@@ -498,7 +501,7 @@ def plot_strip_b_summary(
     ax2.set_yticklabels(y_labels, fontsize=8.4, color="#111827")
     ax2.set_xlim(-1.18, 1.18)
     ax2.set_xlabel("与目标 ActualVsIEGap 的 Pearson 相关系数 r", fontsize=10.8)
-    ax2.set_title("全量 53,145 行辛普森悖论排查：Top 10 最撕裂特征哑铃图", fontsize=12.8, fontweight="bold", pad=12)
+    ax2.set_title("最大组内相关跨度前 10 的特征", fontsize=12.8, fontweight="bold", pad=12)
     ax2.grid(axis="x", linestyle=":", alpha=0.45)
     ax2.spines["top"].set_visible(False)
     ax2.spines["right"].set_visible(False)
@@ -513,7 +516,7 @@ def plot_strip_b_summary(
 
     n_alert = int((simpson_df["是否触发警报"] == "是").sum())
     fig.suptitle(
-        f"试纸 B 体检总览：素颜树 5 折 R²={cv_summary['HistGBDT']['r2_mean']*100:.2f}% (碾压线性 {cv_summary['Ridge']['r2_mean']*100:.2f}% 与 19次洗牌 p={perm_p_value:.3f}) | 捕获 {n_alert} 个辛普森悖论警报特征",
+        f"Step 2B：5 折 R² HistGBDT {cv_summary['HistGBDT']['r2_mean']*100:.2f}% | Ridge {cv_summary['Ridge']['r2_mean']*100:.2f}% | 置换 p={perm_p_value:.3f} | {n_alert} 个特征触发警报",
         fontsize=13.8,
         fontweight="bold",
         y=0.98,
@@ -539,16 +542,16 @@ def run_strip_b(
     random_state: int = 42,
 ) -> dict:
     """
-    执行完整试纸 B 流程：
-    1. 5,000 行 5 折零泄露模型团战对比（Dummy / Ridge / HistGBDT）
-    2. 19 次 Y-Scrambling 置换检验 + 80/20 留出集影子卧底 Permutation Importance 排查
+    执行完整Step 2B 流程：
+    1. 5,000 行 5 折折内预处理模型多变量模型对比（Dummy / Ridge / HistGBDT）
+    2. 19 次 Y-Scrambling 置换检验 + 80/20 留出集随机噪声对照 Permutation Importance 排查
     3. 全量 53,145 行机台 & 规格辛普森悖论切片排查并导出 CSV 与 PNG
     """
     t_start = time.perf_counter()
     os.makedirs(os.path.dirname(report_csv_path), exist_ok=True)
 
     print("=" * 74)
-    print("🧪 启动【试纸 B】素颜树团战探针 + Y-Scrambling + 辛普森悖论排查 (Step 2B)")
+    print("[INFO] 启动 Step 2B 多变量模型对比与分层诊断")
     print("=" * 74)
 
     # 1. 读取数据与元数据（强制把 26 个无序文本列按字符串读入，严禁 pandas 自动转数字）
@@ -561,16 +564,16 @@ def run_strip_b(
 
     dtype_map = {col: str for col in categorical_cols}
     df = pd.read_csv(data_path, dtype=dtype_map, keep_default_na=False)
-    print(f"📂 已加载洁净数据集：{len(df):,} 行 × {df.shape[1]} 列 | 目标列：{target_col}")
+    print(f"[INFO] 已加载清洗数据集：{len(df):,} 行 × {df.shape[1]} 列 | 目标列：{target_col}")
 
     # 区分超高基数文本列（>250 类）与低/中基数文本列（<=250 类）
     high_cat_cols = [c for c in categorical_cols if df[c].nunique() > 250]
     low_cat_cols = [c for c in categorical_cols if c not in high_cat_cols]
-    print(f"🏷️ 文本特征分流：{len(high_cat_cols)} 个超高基数(>250)走 TargetEncoder | {len(low_cat_cols)} 个低/中基数走原生类别切分")
+    print(f"[INFO] 文本特征分流：{len(high_cat_cols)} 个超高基数(>250)走 TargetEncoder | {len(low_cat_cols)} 个低/中基数走原生类别切分")
     print(f"   超高基数列：{high_cat_cols}")
 
     # ----------------------------------------------------------------
-    # 模块 1：5,000 行抽样 + 影子卧底注入 + 5 折零泄露团战对比
+    # 模块 1：5,000 行抽样 + 随机噪声对照注入 + 5 折折内预处理多变量模型对比
     # ----------------------------------------------------------------
     t_m1 = time.perf_counter()
     df_sample = df.sample(n=sample_size, random_state=random_state).reset_index(drop=True)
@@ -594,7 +597,7 @@ def run_strip_b(
 
     cv_summary = {}
     print("\n" + "-" * 74)
-    print(f"⚔️ 【模块 1】5,000 行 × 5 折零泄露团战比拼（共 {len(feature_cols)} 特征含 1 个影子噪声）")
+    print(f"[INFO] 【模块 1】{len(X_sample):,} 行，5 折交叉验证（共 {len(feature_cols)} 特征含 1 个随机噪声对照）")
     for name, est in models.items():
         t_model = time.perf_counter()
         res = cross_validate(est, X_sample, y_sample, cv=cv, scoring=scoring, n_jobs=5)
@@ -608,18 +611,18 @@ def run_strip_b(
             "elapsed": time.perf_counter() - t_model,
         }
         print(
-            f"   • {name:10s} | 5折 R² = {cv_summary[name]['r2_mean']*100:6.2f}% ± {cv_summary[name]['r2_std']*100:4.2f}% "
+            f"   {name:10s} | 5折 R² = {cv_summary[name]['r2_mean']*100:6.2f}% ± {cv_summary[name]['r2_std']*100:4.2f}% "
             f"| MAE = {cv_summary[name]['mae_mean']:6.2f} ± {cv_summary[name]['mae_std']:4.2f} "
             f"| 耗时 {cv_summary[name]['elapsed']:.2f}s"
         )
-    print(f"⏱️ 模块 1 完成，累计耗时 {time.perf_counter() - t_m1:.2f}s")
+    print(f"[INFO] 模块 1 完成，累计耗时 {time.perf_counter() - t_m1:.2f}s")
 
     # ----------------------------------------------------------------
-    # 模块 2A：19 次 Y-Scrambling 随机洗牌置换检验
+    # 模块 2A：19 次 Y-Scrambling 随机置换置换检验
     # ----------------------------------------------------------------
     t_m2 = time.perf_counter()
     print("\n" + "-" * 74)
-    print(f"🎲 【模块 2A】执行 M = {n_scrambles} 次 Y-Scrambling 真实性检验（每次重跑完整 5 折 HistGBDT）...")
+    print(f"[INFO] 【模块 2A】执行 M = {n_scrambles} 次 目标置换检验（每次重跑完整 5 折 HistGBDT）...")
     real_hgb_r2 = cv_summary["HistGBDT"]["r2_mean"]
     scrambled_r2_list = []
     rng_scram = np.random.RandomState(random_state)
@@ -637,19 +640,19 @@ def run_strip_b(
     perm_p_value = float((c_exceed + 1) / (n_scrambles + 1))
 
     print(
-        f"   • 19 次洗牌 5折 R² 分布：最小={np.min(scrambled_r2_arr)*100:.2f}% | "
+        f"   19 次置换 5折 R² 分布：最小={np.min(scrambled_r2_arr)*100:.2f}% | "
         f"中位={np.median(scrambled_r2_arr)*100:.2f}% | 最大={np.max(scrambled_r2_arr)*100:.2f}%"
     )
-    print(f"   • 真实 HistGBDT R² = {real_hgb_r2*100:.2f}% | 超越真实分数的洗牌次数 C = {c_exceed}/{n_scrambles}")
-    print(f"   • Phipson & Smyth 置换检验 p = ({c_exceed}+1)/({n_scrambles}+1) = {perm_p_value:.4f}")
-    print(f"⏱️ 模块 2A（19 次洗牌）耗时 {time.perf_counter() - t_m2:.2f}s")
+    print(f"   真实 HistGBDT R² = {real_hgb_r2*100:.2f}% | 超越真实分数的置换次数 C = {c_exceed}/{n_scrambles}")
+    print(f"   Phipson & Smyth 置换检验 p = ({c_exceed}+1)/({n_scrambles}+1) = {perm_p_value:.4f}")
+    print(f"[INFO] 模块 2A（19 次置换）耗时 {time.perf_counter() - t_m2:.2f}s")
 
     # ----------------------------------------------------------------
-    # 模块 2B：80/20 留出验证集 + Permutation Importance + 影子卧底核验
+    # 模块 2B：80/20 留出验证集 + Permutation Importance + 随机噪声对照核验
     # ----------------------------------------------------------------
     t_m2b = time.perf_counter()
     print("\n" + "-" * 74)
-    print("🕵️ 【模块 2B】80/20 留出验证集特征排位与影子卧底 (__shadow_random_noise__) 检验...")
+    print("[INFO] 【模块 2B】80/20 留出验证集特征排位与随机噪声对照 (__shadow_random_noise__) 检验...")
     X_tr, X_val, y_tr, y_val = train_test_split(
         X_sample, y_sample, test_size=0.20, random_state=random_state
     )
@@ -681,16 +684,16 @@ def run_strip_b(
     real_pi_df = pi_df[pi_df["feature_name"] != shadow_col]
     n_beat_shadow = int((real_pi_df["importance_mean"] > shadow_imp).sum())
 
-    print(f"   • 留出验证集 (n=1,000) 表现：R² = {val_r2*100:.2f}% | MAE = {val_mae:.2f}")
-    print(f"   • 影子卧底排名：#{shadow_rank}/{len(pi_df)} | 重要度 = {shadow_imp:+.6f} (±{shadow_row_pi['importance_std']:.6f})")
-    print(f"   • 共有 {n_beat_shadow}/75 个真实特征排在影子卧底之上")
-    print("   🏆 Top 10 团战贡献核心特征（Permutation Importance on 留出集）：")
+    print(f"   留出验证集 (n=1,000) 表现：R² = {val_r2*100:.2f}% | MAE = {val_mae:.2f}")
+    print(f"   随机噪声对照排名：#{shadow_rank}/{len(pi_df)} | 重要度 = {shadow_imp:+.6f} (±{shadow_row_pi['importance_std']:.6f})")
+    print(f"   共有 {n_beat_shadow}/75 个真实特征排在随机噪声对照之上")
+    print("   [INFO] 留出集置换重要度前 10 的特征：")
     for _, row in real_pi_df.head(10).iterrows():
         print(
             f"      #{int(row['rank']):2d} | {row['feature_name']:52s} "
             f"| ΔR² = {row['importance_mean']:+.5f} (±{row['importance_std']:.5f})"
         )
-    print(f"⏱️ 模块 2B 耗时 {time.perf_counter() - t_m2b:.2f}s")
+    print(f"[INFO] 模块 2B 耗时 {time.perf_counter() - t_m2b:.2f}s")
 
     holdout_info = {
         "val_r2": val_r2,
@@ -703,11 +706,11 @@ def run_strip_b(
     }
 
     # ----------------------------------------------------------------
-    # 模块 3：全量 53,145 行辛普森悖论分家排查（按机台 & 按规格）
+    # 模块 3：全量 53,145 行辛普森悖论分层诊断（按机台 & 按规格）
     # ----------------------------------------------------------------
     t_m3 = time.perf_counter()
     print("\n" + "-" * 74)
-    print(f"🔍 【模块 3】全量 {len(df):,} 行辛普森悖论分家排查（仅保留样本量 >= {min_group_samples} 的主力组）...")
+    print(f"[INFO] 【模块 3】全量 {len(df):,} 行辛普森悖论分层诊断（仅保留样本量 >= {min_group_samples} 的有效分组）...")
 
     y_full = df[target_col].to_numpy(dtype=np.float64)
     global_r_map = {}
@@ -729,8 +732,8 @@ def run_strip_b(
         target_col=target_col,
         min_samples=min_group_samples,
     )
-    print(f"   • 主力机台分组 (WorkCenterNameCoupled >= {min_group_samples})：{n_wc_groups} 个机台，覆盖 {wc_covered:,} 行")
-    print(f"   • 主力规格分组 (tire_size >= {min_group_samples})：{n_ts_groups} 个规格，覆盖 {ts_covered:,} 行")
+    print(f"   有效机台分组 (WorkCenterNameCoupled >= {min_group_samples})：{n_wc_groups} 个机台，覆盖 {wc_covered:,} 行")
+    print(f"   有效规格分组 (tire_size >= {min_group_samples})：{n_ts_groups} 个规格，覆盖 {ts_covered:,} 行")
 
     simpson_rows = []
     for col in numeric_cols:
@@ -751,17 +754,17 @@ def run_strip_b(
                 dims.append("机台")
             if ts_split:
                 dims.append("规格")
-            reasons.append(f"正负双向撕裂({'+'.join(dims)})")
+            reasons.append(f"组内相关方向反转({'+'.join(dims)})")
         if wc_masked or ts_masked:
             dims = []
             if wc_masked:
                 dims.append("机台")
             if ts_masked:
                 dims.append("规格")
-            reasons.append(f"全局失明掩盖({'+'.join(dims)})")
-        reason_str = " & ".join(reasons) if reasons else "正常"
+            reasons.append(f"总体弱相关与分层强相关({'+'.join(dims)})")
+        reason_str = " & ".join(reasons) if reasons else "[PASS]"
 
-        # 选取跨度更大的切片维度作为“主导撕裂维度”（用于排序与哑铃图展示）
+        # 选取跨度更大的切片维度作为“最大跨度分层维度”（用于排序与哑铃图展示）
         if w["r_span"] >= t["r_span"]:
             dom_dim = "机台 (WorkCenter)"
             dom_r_max, dom_g_max = w["r_max"], w["group_max"]
@@ -776,8 +779,8 @@ def run_strip_b(
         simpson_rows.append({
             "特征名称": col,
             "全局_r": round(r_glob, 6),
-            "最大撕裂跨度": round(max_span, 6),
-            "最大撕裂维度": dom_dim,
+            "最大组内相关跨度": round(max_span, 6),
+            "最大跨度分层维度": dom_dim,
             "是否触发警报": "是" if is_alert else "否",
             "警报类型": reason_str,
             "主导切片_r_max": round(dom_r_max, 6),
@@ -798,26 +801,26 @@ def run_strip_b(
             "规格有效组数": int(t["n_valid_groups"]),
         })
 
-    simpson_df = pd.DataFrame(simpson_rows).sort_values("最大撕裂跨度", ascending=False).reset_index(drop=True)
-    simpson_df.insert(0, "撕裂排名", np.arange(1, len(simpson_df) + 1))
+    simpson_df = pd.DataFrame(simpson_rows).sort_values("最大组内相关跨度", ascending=False).reset_index(drop=True)
+    simpson_df.insert(0, "相关跨度排名", np.arange(1, len(simpson_df) + 1))
 
     # 强制确认零 NaN 后导出 UTF-8 BOM CSV
     assert simpson_df.isna().sum().sum() == 0, "辛普森报告中存在意外 NaN！"
     simpson_df.to_csv(report_csv_path, index=False, encoding="utf-8-sig")
 
     alert_df = simpson_df[simpson_df["是否触发警报"] == "是"]
-    print(f"   • 共捕获 {len(alert_df)}/49 个触发【辛普森悖论警报】的特征！")
-    print("   🚨 Top 10 最撕裂特征榜单：")
+    print(f"   {len(alert_df)}/{len(simpson_df)} 个特征触发辛普森悖论警报。")
+    print("   [INFO] 最大组内相关跨度前 10 的特征：")
     for _, r in simpson_df.head(10).iterrows():
         print(
-            f"      #{int(r['撕裂排名']):2d} | {r['特征名称']:38s} | 全局r={r['全局_r']:+.3f} "
-            f"| 跨度={r['最大撕裂跨度']:.3f} [{r['最大撕裂维度']}: {r['主导切片_r_min']:+.3f}({r['主导切片_最负组']}) ~ "
+            f"      #{int(r['相关跨度排名']):2d} | {r['特征名称']:38s} | 全局r={r['全局_r']:+.3f} "
+            f"| 跨度={r['最大组内相关跨度']:.3f} [{r['最大跨度分层维度']}: {r['主导切片_r_min']:+.3f}({r['主导切片_最负组']}) ~ "
             f"{r['主导切片_r_max']:+.3f}({r['主导切片_最正组']})] | {r['警报类型']}"
         )
-    print(f"⏱️ 模块 3 耗时 {time.perf_counter() - t_m3:.2f}s")
+    print(f"[INFO] 模块 3 耗时 {time.perf_counter() - t_m3:.2f}s")
 
     # ----------------------------------------------------------------
-    # 导出双拼可视化大图
+    # 导出双面板可视化大图
     # ----------------------------------------------------------------
     plot_strip_b_summary(
         cv_summary=cv_summary,
@@ -830,9 +833,9 @@ def run_strip_b(
 
     total_time = time.perf_counter() - t_start
     print("\n" + "=" * 74)
-    print(f"✅ 试纸 B 全部完成！总耗时：{total_time:.2f} 秒")
-    print(f"📄 辛普森报表：{report_csv_path}（{len(simpson_df)} 行 × {simpson_df.shape[1]} 列，0 NaN）")
-    print(f"🖼️ 综合汇总图：{summary_png_path}")
+    print(f"[PASS] Step 2B 完成。总耗时：{total_time:.2f} 秒")
+    print(f"[INFO] 辛普森报表：{report_csv_path}（{len(simpson_df)} 行 × {simpson_df.shape[1]} 列，0 NaN）")
+    print(f"[INFO] 综合汇总图：{summary_png_path}")
     print("=" * 74)
 
     return {
