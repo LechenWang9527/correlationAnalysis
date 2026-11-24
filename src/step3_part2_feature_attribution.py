@@ -841,18 +841,18 @@ def run_stage5_ale(
             "Feature": feat,
             "SHAP_Rank": int(shap_df.loc[shap_df["Feature"] == feat, "SHAP_Rank"].iloc[0]),
             "ALE_Bins": len(midpoints),
-            "Sweet_Spot_Value": float(midpoints[best_i]),
-            "Sweet_Spot_ALE_Sec": float(ale_vals[best_i]),
-            "Worst_Value": float(midpoints[worst_i]),
-            "Worst_ALE_Sec": float(ale_vals[worst_i]),
+            "Min_ALE_Feature_Value": float(midpoints[best_i]),
+            "Min_ALE_Sec": float(ale_vals[best_i]),
+            "Max_ALE_Feature_Value": float(midpoints[worst_i]),
+            "Max_ALE_Sec": float(ale_vals[worst_i]),
             "ALE_Peak_to_Trough_Sec": ale_span,
         })
 
         ax = axes_flat[idx]
         ax.plot(midpoints, ale_vals, color="#2B5C8F", linewidth=2.2, marker="o", markersize=4.5)
         ax.axhline(0.0, color="#555555", linestyle="--", linewidth=1.0)
-        ax.scatter([midpoints[best_i]], [ale_vals[best_i]], color="#1B7837", s=70, zorder=5, label=f"Sweet={midpoints[best_i]:.1f} ({ale_vals[best_i]:+.1f}s)")
-        ax.scatter([midpoints[worst_i]], [ale_vals[worst_i]], color="#C62828", s=70, zorder=5, label=f"Peak={midpoints[worst_i]:.1f} ({ale_vals[worst_i]:+.1f}s)")
+        ax.scatter([midpoints[best_i]], [ale_vals[best_i]], color="#1B7837", s=70, zorder=5, label=f"Minimum ALE: {midpoints[best_i]:.1f} ({ale_vals[best_i]:+.1f}s)")
+        ax.scatter([midpoints[worst_i]], [ale_vals[worst_i]], color="#C62828", s=70, zorder=5, label=f"Maximum ALE: {midpoints[worst_i]:.1f} ({ale_vals[worst_i]:+.1f}s)")
         ax.set_title(f"{feat} (Span={ale_span:.1f}s)", fontsize=11, fontweight="bold")
         ax.set_xlabel(feat, fontsize=9.5)
         ax.set_ylabel("Centered ALE [Seconds]", fontsize=9.5)
@@ -861,7 +861,7 @@ def run_stage5_ale(
         ax.spines["right"].set_visible(False)
         ax.legend(loc="best", fontsize=8.3)
 
-    fig.suptitle("Step 3 Part 2 Stage 5: 1D Accumulated Local Effects (ALE) on Nov Blind Test", fontsize=14, fontweight="bold", y=0.98)
+    fig.suptitle("Step 3 Part 2 Stage 5: 1D Accumulated Local Effects on the November Historical Holdout", fontsize=14, fontweight="bold", y=0.98)
     plt.tight_layout(rect=[0, 0, 1, 0.95])
     fig.savefig(OUT_ALE_PNG, dpi=200)
     plt.close(fig)
@@ -1044,7 +1044,7 @@ def create_synthesis_dashboard(
         ax1.annotate(r["Feature"][:22], (r["SHAP_Rank"], r["Perm_Rank"]), xytext=(4, 3), textcoords="offset points", fontsize=7.8)
     ax1.set_xlabel("Stage 1 TreeSHAP Rank (Lower = More Important)", fontsize=10, fontweight="bold")
     ax1.set_ylabel("Stage 2 Nov Permutation Rank", fontsize=10, fontweight="bold")
-    ax1.set_title("Panel A: TreeSHAP vs Nov Blind Permutation Rank Consistency", fontsize=11.5, fontweight="bold")
+    ax1.set_title("Panel A: TreeSHAP and November Holdout Permutation Ranks", fontsize=11.5, fontweight="bold")
     ax1.grid(True, linestyle="--", alpha=0.35)
     ax1.spines["top"].set_visible(False)
     ax1.spines["right"].set_visible(False)
@@ -1079,8 +1079,8 @@ def create_synthesis_dashboard(
     ax3.set_yticks(y_l)
     ax3.set_yticklabels(loco_plot["Experiment"].str.replace("Single_LOCO_Drop_", "Drop ", regex=False), fontsize=8.8)
     ax3.invert_yaxis()
-    ax3.set_xlabel("Nov Blind R2 Drop (Delta R2 LOCO)", fontsize=10, fontweight="bold")
-    ax3.set_title("Panel C: Irreplaceability Verification via LOCO Retraining", fontsize=11.5, fontweight="bold")
+    ax3.set_xlabel("November Historical Holdout R² Drop", fontsize=10, fontweight="bold")
+    ax3.set_title("Panel C: LOCO Refit Comparison", fontsize=11.5, fontweight="bold")
     ax3.grid(axis="x", linestyle="--", alpha=0.35)
     ax3.spines["top"].set_visible(False)
     ax3.spines["right"].set_visible(False)
@@ -1099,7 +1099,7 @@ def create_synthesis_dashboard(
         color="#1B7837",
         markersize=7,
         capsize=4,
-        label="DML Net Causal Effect (95% CI)",
+        label="Historical DML Estimate (95% CI)",
     )
     ax4.scatter(dml_df["Naive_OLS_Slope_Sec_Per_Unit"], y_d + 0.02, color="#D97724", marker="s", s=55, label="Naive OLS (Confounded)")
     ax4.errorbar(
@@ -1116,13 +1116,13 @@ def create_synthesis_dashboard(
     ax4.set_yticklabels(dml_df["Treatment_Feature"], fontsize=9.5, fontweight="bold")
     ax4.invert_yaxis()
     ax4.set_xlabel("Effect Slope [Seconds per Unit Change]", fontsize=10, fontweight="bold")
-    ax4.set_title("Panel D: DML Causal Net Effects vs Naive OLS & Placebo Check", fontsize=11.5, fontweight="bold")
+    ax4.set_title("Panel D: Historical DML Estimates and Placebo Check", fontsize=11.5, fontweight="bold")
     ax4.grid(axis="x", linestyle="--", alpha=0.35)
     ax4.spines["top"].set_visible(False)
     ax4.spines["right"].set_visible(False)
     ax4.legend(loc="best", fontsize=8.5)
 
-    fig.suptitle("Step 3 Part 2 Synthesis Dashboard: Attribution, Irreplaceability, and Causal Net Effects", fontsize=14, fontweight="bold", y=0.98)
+    fig.suptitle("Step 3 Part 2 Synthesis Dashboard: Attribution, LOCO, and Historical DML Estimates", fontsize=14, fontweight="bold", y=0.98)
     plt.tight_layout(rect=[0, 0, 1, 0.955])
     fig.savefig(OUT_DASH_PNG, dpi=200)
     plt.close(fig)

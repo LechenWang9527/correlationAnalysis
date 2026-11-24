@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Step 3 Part 1: Multi-Model Benchmark, Anti-Leakage Validation, and Weighted Voting.
+Step 3 Part 1: Multi-Model Benchmark, Historical Validation, and Weighted Voting.
 
 Implements 5 base models (Ridge, ExtraTrees, CatBoost, LightGBM, XGBoost) and
 weighted voting ensembles (Equal, SLSQP, Caruana greedy selection) across two
@@ -520,7 +520,7 @@ def create_summary_figure(
         sub_df["Nov_Blind_R2"],
         height=bar_h,
         color="#D97724",
-        label="Nov Independent Blind Test (n=9,694)",
+        label="November historical holdout (n=9,694)",
     )
 
     ax1.set_yticks(y_pos)
@@ -528,7 +528,7 @@ def create_summary_figure(
     ax1.invert_yaxis()
     ax1.set_xlabel("Explained Variance (R2)", fontsize=11, fontweight="bold")
     ax1.set_title(
-        "Panel A: Model R2 Comparison (Anti-Leakage Dual Validation)",
+        "Panel A: Model R² by Evaluation Split",
         fontsize=12,
         fontweight="bold",
         pad=12,
@@ -563,7 +563,7 @@ def create_summary_figure(
             color="#9C4D0E",
         )
 
-    ax1.legend(loc="lower right", frameon=True, fontsize=9)
+    ax1.legend(loc="upper right", frameon=True, fontsize=9)
 
     # Panel B: Residual Correlation Heatmap + Weight Annotation Box
     ax2 = axes[1]
@@ -609,7 +609,7 @@ def create_summary_figure(
     )
 
     fig.suptitle(
-        "Step 3 Part 1: 6-Model Benchmark under Work-Order GroupKFold and Nov Blind Test",
+        "Historical Model Benchmark and Weighted Voting",
         fontsize=14,
         fontweight="bold",
         y=0.98,

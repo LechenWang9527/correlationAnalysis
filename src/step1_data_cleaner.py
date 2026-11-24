@@ -1,36 +1,35 @@
 # -*- coding: utf-8 -*-
 """
 ====================================================================
-第一步：物理提纯与无失真数据清洗流水线 (Industrial Data Cleaner)
+第一步：数据清洗与类型规范化 (Industrial Data Cleaner)
 ====================================================================
-本脚本严格遵循“物理提纯 + 保留真实名义类别”的原则，坚决杜绝把无序文本/代号
-强行编成 1,2,3 或频次占比（避免制造虚假线性关系），具体执行以下 5 大动作：
+清洗原始数据并保留无序类别的字符串类型，避免引入人为顺序。处理步骤如下：
 
 1. 【物理异常修正】：
    - 将 OperatorOverlapSeconds 和 OperatorCoverageRatio 中小于 0 的异常负数截断为 0。
-2. 【剔除垃圾、常数与派生/双胞胎列】：
+2. 【剔除无关字段、常数与派生/等价文本列】：
    - 剔除索引、92%纯空格、绝对常数列（6 列）；
-   - 剔除数学严格派生列 & 文本双胞胎列（8 列）；
-   - 剔除单值占比 >= 98% 的伪常数死值列（但显式保护并保留 1_belt_ply_assembly_-_1_strip_rubber_-_width）。
-3. 【34 个非数值/代号列的四批精准物理提纯】：
-   - 先将伪装成数字的代号/类别列 RecipeID、1_belt_ply_assembly_-_local_plant_workcode、OperatorUserID、DestinationInfo 转为干净字符串；
+   - 剔除可由其他字段精确计算的列与等价文本列（8 列）；
+   - 剔除单值占比 >= 98% 的近常数列（但显式保护并保留 1_belt_ply_assembly_-_1_strip_rubber_-_width）。
+3. 【34 个非数值/代号列的分批类型转换】：
+   - 先将以数字表示的代号或类别字段 RecipeID、1_belt_ply_assembly_-_local_plant_workcode、OperatorUserID、DestinationInfo 转为去除首尾空格的字符串；
    - 批次 A（二元开关类，2 列）：oeindicator、1_flange_cushion_-_compound -> 映射为 0/1；
    - 批次 B（天然有序/内嵌真数值类，7 列）：
      * 1_sidewall_-_bom_component_setting -> 去掉 'A=' 转为 float；
      * speed_symbol -> 映射为真实速度上限（km/h）；
-     * 1_wound_cap_ply_-_cf_construction -> 修复空格脏数据后映射为总纤度（dtex）；
+     * 1_wound_cap_ply_-_cf_construction -> 修复多余空格后映射为总纤度（dtex）；
      * bead_-_bead_construction -> 解析 a x b 计算钢丝总根数；
      * ply_lock -> 按层数结构序数编码；
      * article_cluster_link_status -> 按 PLM 生命周期序数编码；
      * tire_size -> 既保留原字符串作为规范规格分组列，又额外拆出 tire_section_width 与 tire_aspect_ratio 两个物理数值列；
    - 批次 C（低基数无序名义类，18 列，含 DestinationInfo）与 批次 D（高基数无序代号类，7 列，含 OperatorUserID）+ tire_size：
-     * 严禁乱编数字！仅做首尾空格清理，原封不动保留干净文本字符串（共 26 个类别字符串列）。
+     * 删除首尾空格并保留类别字符串（共 26 个类别字符串列）。
 4. 【全局去重】：
-   - 删除完全一模一样的重复行，并重置行索引。
+   - 删除完全重复的记录，并重置行索引。
 5. 【输出与严格自检】：
-   - 导出洁净数据集：data/processed/clean_dataset.csv
+   - 导出清洗后的数据集：data/processed/clean_dataset.csv
    - 导出特征结构元数据：data/processed/feature_schema.json
-   - 清理旧版易引发误会的 text_encoding_dictionary.json
+   - 清理旧版 text_encoding_dictionary.json
    - 对输出结果执行 0 NaN、0 Inf 断言校验，并打印全列类型统计与关键样例。
 """
 
@@ -54,13 +53,13 @@ class IndustrialDataCleaner:
         self.output_dir = output_dir
         os.makedirs(self.output_dir, exist_ok=True)
 
-        # 显式受保护的列：即使占比接近阈值也绝不误删
+        # 显式受保护的列：即使达到占比阈值也予以保留
         self.protected_cols = {
             self.target_col,
             "1_belt_ply_assembly_-_1_strip_rubber_-_width",
         }
 
-        # 记录四批提纯的完整元数据，最终写入 feature_schema.json
+        # 记录四批类型转换的完整元数据，最终写入 feature_schema.json
         self.schema = {
             "target_col": self.target_col,
             "dataset_shape": {},
@@ -102,7 +101,7 @@ class IndustrialDataCleaner:
     def _apply_strict_map(series: pd.Series, mapping: dict, col_name: str) -> pd.Series:
         """
         严格字典映射辅助函数：先去首尾空格，再校验全列无未知取值，最后映射为 float。
-        绝不允许悄悄变成 NaN！
+        无法解析时抛出异常。
         """
         cleaned = series.astype(str).str.strip()
         unknown_vals = set(cleaned.unique()) - set(mapping.keys())
@@ -112,7 +111,7 @@ class IndustrialDataCleaner:
 
     def run(self) -> pd.DataFrame:
         print("=" * 75)
-        print("【第一步：物理提纯与无失真数据清洗流水线 · 启动】")
+        print("[INFO] 启动 Step 1 数据清洗与类型规范化")
 
         # 0. 读取原始数据（low_memory=False 防止混合类型警告）
         df = pd.read_csv(self.data_path, low_memory=False)
@@ -128,7 +127,7 @@ class IndustrialDataCleaner:
                 print(f"[1] 物理异常修正 [{col}]: 已将 {neg_cnt} 行异常负数截断为 0")
 
         # ------------------------------------------------------------------
-        # 2. 剔除无用、纯空格、绝对常数、派生与双胞胎列
+        # 2. 剔除无用、纯空格、绝对常数、派生与等价文本列
         # ------------------------------------------------------------------
         drop_basic = [
             "Unnamed: 0",        # 无意义导出行号
@@ -157,7 +156,7 @@ class IndustrialDataCleaner:
         all_explicit_drop = to_drop_basic + to_drop_derived + to_drop_twins
 
         df.drop(columns=all_explicit_drop, inplace=True)
-        print(f"[2.1] 已剔除无用/常数/派生/双胞胎列共 {len(all_explicit_drop)} 列")
+        print(f"[2.1] 已剔除无用/常数/派生/等价文本列共 {len(all_explicit_drop)} 列")
 
         # 剔除伪常数列（单一值占比 >= 98%），显式跳过目标列和受保护特征列
         pseudo_drop = []
@@ -185,9 +184,9 @@ class IndustrialDataCleaner:
         }
 
         # ------------------------------------------------------------------
-        # 3. 34 个非数值/代号列的“四批精准物理提纯”
+        # 3. 34 个非数值/代号列的“分批类型转换”
         # ------------------------------------------------------------------
-        # 先把伪装成大整数的代号/类别列强制转为干净字符串 (id_as_cat)
+        # 将以整数表示的代号或类别字段转为字符串并清理首尾空格
         id_as_cat = [
             "RecipeID",
             "1_belt_ply_assembly_-_local_plant_workcode",
@@ -251,7 +250,7 @@ class IndustrialDataCleaner:
             "mapping": speed_map,
         }
 
-        # B3: 1_wound_cap_ply_-_cf_construction -> 先修复空格脏数据，再映射为总纤度 (dtex)
+        # B3: 1_wound_cap_ply_-_cf_construction -> 先修复多余空格，再映射为总纤度 (dtex)
         cap_cleaned = (
             df["1_wound_cap_ply_-_cf_construction"]
             .astype(str)
@@ -326,10 +325,10 @@ class IndustrialDataCleaner:
             "tire_section_width": "从 tire_size 解析出的轮胎名义断面宽度 (mm)",
             "tire_aspect_ratio": "从 tire_size 解析出的轮胎扁平比 (%)",
         }
-        print("[3.2] 批次 B（天然有序/内嵌真数值 7 列）提纯完成，并拆出 tire_section_width 与 tire_aspect_ratio")
+        print("[3.2] 批次 B（天然有序/内嵌真数值 7 列）转换完成，并拆出 tire_section_width 与 tire_aspect_ratio")
 
         # --- 批次 C（18 列，含 DestinationInfo） & 批次 D（7 列，含 OperatorUserID）+ 保留原字符串的 tire_size（共 26 个类别字符串列） ---
-        # 注意：严禁乱编 1,2,3 或频次占比！仅清理首尾空格，原封不动保留干净字符串
+        # 去除首尾空格并保留类别字符串
         batch_a_cols = ["oeindicator", "1_flange_cushion_-_compound"]
         batch_b_numeric_cols = [
             "1_sidewall_-_bom_component_setting",
@@ -347,10 +346,10 @@ class IndustrialDataCleaner:
 
         # 统计并区分低基数 (Batch C) 与高基数 (Batch D + tire_size)
         cat_unique_counts = {c: int(df[c].nunique()) for c in categorical_cols}
-        print(f"[3.3] 批次 C+D 及 tire_size（共 {len(categorical_cols)} 列）已保留干净原始文本字符串，严禁伪数字编码！")
+        print(f"[3.3] 批次 C+D 及 tire_size（共 {len(categorical_cols)} 列）已保留原字符串类型。")
 
         # ------------------------------------------------------------------
-        # 4. 去除完全一模一样的重复行
+        # 4. 去除完全重复的记录
         # ------------------------------------------------------------------
         before_dup = len(df)
         df = df.drop_duplicates().reset_index(drop=True)
@@ -382,10 +381,10 @@ class IndustrialDataCleaner:
         with open(schema_path, "w", encoding="utf-8") as f:
             json.dump(self.schema, f, ensure_ascii=False, indent=2)
 
-        # 删除旧的容易引起误会的 text_encoding_dictionary.json
+        # 删除旧版 text_encoding_dictionary.json
         if os.path.exists(old_dict_path):
             os.remove(old_dict_path)
-            print(f"[5.0] 已移除旧版易产生误导的字典文件: {old_dict_path}")
+            print(f"[5.0] 已移除旧版字典文件: {old_dict_path}")
 
         # 执行落地后的回读严格自检
         self._verify_outputs(df, clean_path, schema_path, numeric_features, categorical_cols)
@@ -403,7 +402,7 @@ class IndustrialDataCleaner:
         严格断言校验：回读导出的 clean_dataset.csv，确保 0 NaN、0 Inf、类别列数量精确、样例无误。
         """
         print("\n" + "-" * 75)
-        print("【严格自检报告 · 逐项断言验证】")
+        print("[INFO] 校验清洗结果")
 
         # 回读时显式将 26 个类别列按 str 读取，防止 RecipeID / OperatorUserID / DestinationInfo 等纯数字代号被误读为整型
         dtype_map = {c: str for c in categorical_cols}
@@ -441,14 +440,14 @@ class IndustrialDataCleaner:
         ]:
             assert must_col in df_disk.columns, f"关键列 [{must_col}] 缺失！"
 
-        print(f"  [PASS] 洁净矩阵尺寸: {df_disk.shape[0]:,} 行 × {df_disk.shape[1]} 列")
+        print(f"  [PASS] 清洗后的矩阵尺寸: {df_disk.shape[0]:,} 行 × {df_disk.shape[1]} 列")
         print(f"  [PASS] 目标列 (1 列): {self.target_col} ({df_disk[self.target_col].dtype})")
         print(f"  [PASS] 数值特征列 ({len(numeric_features)} 列): 全部为数值类型，0 个 NaN，0 个 Inf")
         print(f"  [PASS] 无序类别/分组字符串列 ({len(categorical_cols)} 列): 原文保留，0 个空值/NaN")
-        print(f"  [PASS] 洁净数据路径: {clean_path}")
+        print(f"  [PASS] 清洗后的数据路径: {clean_path}")
         print(f"  [PASS] 特征元数据路径: {schema_path}")
 
-        print("\n【关键物理提纯列 & 类别列样例抽查】")
+        print("\n[INFO] 转换字段与类别字段样例")
         sample_cols = [
             "oeindicator",
             "1_flange_cushion_-_compound",
@@ -468,7 +467,7 @@ class IndustrialDataCleaner:
         ]
         for col in sample_cols:
             vals = df_disk[col].unique()[:5].tolist()
-            print(f"  • {col:<46} | dtype={str(df_disk[col].dtype):<8} | nunique={df_disk[col].nunique():<4} | sample={vals}")
+            print(f"  [INFO] {col:<46} | dtype={str(df_disk[col].dtype):<8} | nunique={df_disk[col].nunique():<4} | sample={vals}")
         print("=" * 75)
 
 
